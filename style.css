@@ -1,0 +1,335 @@
+/* RESET BÁSICO */
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+  
+  body {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    padding: 15px;
+    background-color: #f5f7fa;
+    color: #333;
+    line-height: 1.5;
+  }
+  
+  /* ENCABEZADO */
+  header {
+    text-align: center;
+    margin-bottom: 20px;
+  }
+  
+  h1 {
+    font-size: 1.8em;
+    color: #1976d2;
+    margin-bottom: 10px;
+  }
+  
+  /* NAVEGACIÓN */
+  nav {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 10px;
+  }
+  
+  nav button {
+    padding: 10px 15px;
+    border: none;
+    background-color: #1976d2;
+    color: white;
+    border-radius: 6px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: background-color 0.3s ease, transform 0.2s ease;
+  }
+  
+  nav button:hover,
+  nav button:focus {
+    background-color: #1565c0;
+    outline: none;
+    transform: scale(1.05);
+  }
+  
+  /* SECCIONES */
+  .seccion {
+    margin-top: 25px;
+    transition: opacity 0.3s ease;
+  }
+  
+  .oculto {
+    display: none !important;
+    opacity: 0;
+  }
+  
+  /* TITULOS */
+  h2 {
+    margin-bottom: 15px;
+    font-size: 1.4em;
+    color: #444;
+  }
+  
+  /* FORMULARIOS E INPUTS */
+  input,
+  button,
+  textarea {
+    display: block;
+    width: 100%;
+    padding: 10px;
+    margin-top: 10px;
+    border-radius: 5px;
+    border: 1px solid #ccc;
+    font-size: 1em;
+    transition: border-color 0.3s ease, box-shadow 0.3s ease;
+  }
+  
+  input:focus,
+  textarea:focus {
+    border-color: #1976d2;
+    box-shadow: 0 0 8px rgba(25, 118, 210, 0.4);
+    outline: none;
+  }
+  
+  input::placeholder {
+    color: #888;
+  }
+  
+/* PRODUCTOS */
+.producto {
+    background-color: #ffffff;
+    padding: 15px 15px 15px 15px;
+    margin-bottom: 12px;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    transition: box-shadow 0.3s ease;
+    display: flex;
+    gap: 15px;
+    align-items: flex-start;
+    position: relative;
+  }
+  
+  .producto:hover {
+    box-shadow: 0 3px 8px rgba(25,118,210,0.3);
+  }
+  
+  /* Contenedor para inputs verticales */
+  .producto > div.inputs-container {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  
+  /* Inputs estilo */
+  .producto input.producto-nombre,
+  .producto input.producto-precio,
+  .producto input.producto-desc {
+    width: 100%;
+    box-sizing: border-box;
+    padding-right: 12px; /* un poco de padding para no pegar iconos */
+    font-size: 1em;
+  }
+  
+  /* Botón eliminar producto */
+.eliminar-producto {
+    position: relative;  /* no absolute para no solapar inputs */
+    width: 36px;
+    height: 36px;
+    background: none;
+    border: none;
+    color: #e53935;
+    font-size: 24px;
+    cursor: pointer;
+    transition: color 0.3s ease;
+    flex-shrink: 0;
+    align-self: flex-start;
+    padding: 0;
+    line-height: 36px;
+    text-align: center;
+  }
+  
+  .eliminar-producto:hover {
+    color: #b71c1c;
+  }
+  
+  /* DETALLE DE LISTA */
+  .detalle-lista {
+    margin-top: 10px;
+    padding: 10px 15px;
+    background-color: #f0f0f0;
+    border-left: 4px solid #888;
+    border-radius: 5px;
+    margin-bottom: 10px;
+    font-size: 0.95em;
+    transition: max-height 0.4s ease, opacity 0.4s ease;
+  }
+  
+  .detalle-lista.oculto {
+    max-height: 0;
+    opacity: 0;
+    overflow: hidden;
+    padding: 0 15px;
+  }
+  
+  /* MENSAJE FLOTANTE */
+  .mensaje {
+    margin-top: 15px;
+    padding: 10px 15px;
+    border-radius: 6px;
+    background-color: #d4edda;
+    color: #155724;
+    border: 1px solid #c3e6cb;
+    max-width: 600px;
+    font-weight: bold;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+    transition: opacity 0.4s ease;
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    z-index: 1100;
+  }
+  
+  .mensaje.oculto {
+    opacity: 0;
+    pointer-events: none;
+    visibility: hidden;
+  }
+  
+  /* SUGERENCIAS */
+.sugerencias {
+    background: white;
+    border: 1px solid #ccc;
+    max-height: 220px;
+    overflow-y: auto;
+    display: none;
+    position: absolute;
+    width: 100%;
+    z-index: 1000;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    border-radius: 5px;
+    font-size: 0.9em;
+    top: 100%;  /* justo abajo del input */
+    left: 0;
+    margin-top: 4px;
+  }
+  
+  /* Items sugerencia */
+  .sugerencia-item {
+    padding: 8px 12px;
+    border-bottom: 1px solid #eee;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+  }
+  
+  .sugerencia-item:last-child {
+    border-bottom: none;
+  }
+  
+  .sugerencia-item:hover,
+  .sugerencia-item.animate:hover {
+    background-color: #f0f0f0;
+  }
+  
+  .sugerencia-item div {
+    margin: 2px 0;
+  }
+  
+  .descripcion-sugerida {
+    font-style: italic;
+    color: #666;
+    font-size: 0.85em;
+    margin-top: 3px;
+  }
+  
+  /* Para animación simple de aparición */
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(5px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  
+  .animate {
+    animation: fadeIn 0.25s ease forwards;
+  }
+
+    /* Colores de contador de resultados */
+  #contadorResultados {
+    margin-top: 0.5em;
+    font-weight: bold;
+    transition: color 0.3s ease;
+  }
+  
+  #contadorResultados.cero {
+    color: #e53935; /* rojo */
+  }
+  
+  #contadorResultados.pocos {
+    color: #fbc02d; /* amarillo / advertencia */
+  }
+  
+  #contadorResultados.muchos {
+    color: #388e3c; /* verde */
+  }
+  
+  
+  /* RESPONSIVE - MÓVILES */
+  @media (max-width: 600px) {
+    nav {
+      flex-direction: column;
+      gap: 8px;
+    }
+  
+    h1 {
+      font-size: 1.5em;
+    }
+  
+    .mensaje {
+      font-size: 0.95em;
+      max-width: 90%;
+      bottom: 10px;
+      right: 5%;
+    }
+  }
+  
+  /* RESPONSIVE - ESCRITORIO */
+  @media screen and (min-width: 768px) {
+    body {
+      display: flex;
+      flex-direction: row;
+      align-items: flex-start;
+    }
+  
+    nav {
+      width: 240px;
+      flex-direction: column;
+      align-items: flex-start;
+      height: 100vh;
+      position: sticky;
+      top: 0;
+      padding: 20px 15px;
+      background-color: #ffffff;
+      border-right: 1px solid #ccc;
+      gap: 12px;
+    }
+  
+    nav button {
+      width: 100%;
+      font-size: 1em;
+    }
+  
+    main,
+    .seccion {
+      flex: 1;
+      padding: 20px;
+      margin-left: 10px;
+      max-width: 1000px;
+    }
+  
+    .mensaje {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      max-width: 300px;
+    }
+  }
+  

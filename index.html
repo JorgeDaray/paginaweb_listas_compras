@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Lista de Compras</title>
+  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" />
+</head>
+<body>
+  <header>
+    <h1>Mi Lista de Compras</h1>
+    <nav>
+        <button onclick="mostrarSeccion('agregar')">Agregar Lista</button>
+        <button onclick="mostrarSeccion('consultar')">Consultar por Tienda</button>
+        <button onclick="mostrarSeccion('verListas')">Ver Listas</button>
+    </nav>      
+  </header>
+
+  <main>
+    <!-- Sección Agregar Lista -->
+    <section id="agregar" class="seccion">
+      <h2>Agregar Lista de Compras</h2>
+      <form id="formLista">
+        <input type="text" id="lugar" placeholder="Lugar de compra" required />
+        <input type="date" id="fecha" required />
+        <div id="productos">
+            <div class="producto">
+                <div class="inputs-container">
+                  <input type="text" placeholder="Producto" class="producto-nombre" required oninput="mostrarSugerencias(this)" />
+                  <div class="sugerencias"></div>
+                  <input type="number" placeholder="Precio" class="producto-precio" required />
+                  <input type="text" placeholder="Descripción (opcional)" class="producto-desc" />
+                </div>
+                <button type="button" class="eliminar-producto" onclick="eliminarProducto(this)">❌</button>
+            </div>                          
+        </div>
+        <button type="button" onclick="agregarProducto()">Agregar otro producto</button>
+        <button type="submit">Guardar Lista</button>
+      </form>
+    </section>
+
+    <!-- Sección Consultar por Tienda -->
+<section id="consultar" class="seccion oculto">
+    <h2>🔎 Consultar Compras</h2>
+    
+    <div style="display: flex; flex-direction: column; gap: 0.5em;">
+      <input type="text" id="filtroTienda" placeholder="Buscar por tienda..." />
+      <input type="text" id="filtroProducto" placeholder="Buscar por producto..." />
+  
+      <!-- Selector para ordenar resultados -->
+      <label for="ordenarPor">Ordenar por:</label>
+      <select id="ordenarPor">
+        <option value="">-- Seleccionar --</option>
+        <option value="precio">Precio</option>
+        <option value="nombre">Nombre</option>
+      </select>
+    </div>
+     <!-- Aquí el contador -->
+    <div id="contadorResultados" style="margin-top: 0.5em; font-weight: bold;"></div>
+  
+    <ul id="listaResultados"></ul>
+  </section>  
+
+    <!-- Sección Ver Listas -->
+    <section id="verListas" class="seccion oculto">
+        <h2>Listas completas por fecha y lugar</h2>
+        <input type="text" id="filtroLugarListas" placeholder="Filtrar por lugar de compra..." oninput="mostrarListas(true)" />
+        <ul id="todasLasListas"></ul>
+        <button id="btnCargarMas" onclick="cargarMasListas()" style="display:none; margin-top: 10px;">Mostrar otros 10</button>
+      </section>      
+  </main>
+  <div id="mensaje" class="mensaje oculto"></div>
+  <script src="script.js"></script>
+</body>
+</html>
