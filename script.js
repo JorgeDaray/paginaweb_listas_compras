@@ -1,15 +1,44 @@
-// Firebase ya inicializado en el HTML:
-// const app = firebase.initializeApp(firebaseConfig);
-// const db = firebase.firestore();
+// script.js
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-app.js";
+import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-analytics.js";
+import {
+  getFirestore,
+  collection,
+  addDoc,
+  getDocs,
+  query,
+  orderBy,
+  limit,
+  deleteDoc,
+  doc,
+  serverTimestamp,
+} from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
 
-function mostrarSeccion(id) {
-  document.querySelectorAll('.seccion').forEach(sec => {
-    sec.classList.add('oculto');
+const firebaseConfig = {
+  apiKey: "AIzaSyCGXnX8UJtLC0Jn1oEo6huZqz_ZkmyGO84",
+  authDomain: "listascompras-94a64.firebaseapp.com",
+  projectId: "listascompras-94a64",
+  storageBucket: "listascompras-94a64.firebasestorage.app",
+  messagingSenderId: "792067541567",
+  appId: "1:792067541567:web:f73cf92dd79843d962068a",
+  measurementId: "G-YZ02H3KCZC",
+};
+
+// Inicializar Firebase y Firestore
+const app = initializeApp(firebaseConfig);
+const analytics = getAnalytics(app);
+const db = getFirestore(app);
+
+// Mostrar/ocultar secciones
+export function mostrarSeccion(id) {
+  document.querySelectorAll(".seccion").forEach((sec) => {
+    sec.classList.add("oculto");
   });
-  document.getElementById(id).classList.remove('oculto');
+  document.getElementById(id).classList.remove("oculto");
 }
 
-function agregarProducto() {
+// Agregar producto dinámicamente
+export function agregarProducto() {
   const contenedor = document.getElementById("productos");
   const div = document.createElement("div");
   div.className = "producto";
@@ -25,12 +54,25 @@ function agregarProducto() {
   contenedor.appendChild(div);
 }
 
-function eliminarProducto(boton) {
+// Eliminar producto
+export function eliminarProducto(boton) {
   const divProducto = boton.parentElement;
   divProducto.remove();
 }
 
-document.getElementById("formLista").addEventListener("submit", async e => {
+// Guardar lista en Firestore
+async function guardarLista(nuevaLista) {
+  try {
+    nuevaLista.createdAt = serverTimestamp();
+    await addDoc(collection(db, "listas"), nuevaLista);
+    mostrarMensaje("✅ Lista guardada correctamente");
+  } catch (error) {
+    mostrarMensaje("❌ Error guardando la lista: " + error.message);
+  }
+}
+
+// Evento submit del formulario
+document.getElementById("formLista").addEventListener("submit", async (e) => {
   e.preventDefault();
   const lugar = document.getElementById("lugar").value.trim();
   const fecha = document.getElementById("fecha").value;
@@ -48,7 +90,7 @@ document.getElementById("formLista").addEventListener("submit", async e => {
       return;
     }
     if (isNaN(precio) || precio <= 0) {
-      mostrarMensaje(`❌ El producto "${nombre || 'sin nombre'}" tiene un precio inválido.`);
+      mostrarMensaje(`❌ El producto "${nombre || "sin nombre"}" tiene un precio inválido.`);
       hayError = true;
       return;
     }
@@ -57,27 +99,24 @@ document.getElementById("formLista").addEventListener("submit", async e => {
 
   if (hayError || productos.length === 0) return;
 
-  const nuevaLista = { lugar, fecha, productos, createdAt: firebase.firestore.FieldValue.serverTimestamp() };
+  await guardarLista({ lugar, fecha, productos });
 
-  try {
-    await db.collection("listas").add(nuevaLista);
-    mostrarMensaje("✅ Lista guardada correctamente");
-    e.target.reset();
-    document.getElementById("productos").innerHTML = `
-      <div class="producto">
-        <div class="inputs-container">
-          <input type="text" placeholder="Producto" class="producto-nombre" required oninput="mostrarSugerencias(this)" />
-          <div class="sugerencias"></div>
-          <input type="number" placeholder="Precio" class="producto-precio" required />
-          <input type="text" placeholder="Descripción (opcional)" class="producto-desc" />
-        </div>
-      </div>`;
-    mostrarListasFirebase(true);
-  } catch (error) {
-    mostrarMensaje("❌ Error guardando la lista: " + error.message);
-  }
+  e.target.reset();
+  document.getElementById("productos").innerHTML = `
+    <div class="producto">
+      <div class="inputs-container">
+        <input type="text" placeholder="Producto" class="producto-nombre" required oninput="mostrarSugerencias(this)" />
+        <div class="sugerencias"></div>
+        <input type="number" placeholder="Precio" class="producto-precio" required />
+        <input type="text" placeholder="Descripción (opcional)" class="producto-desc" />
+      </div>
+      <button type="button" class="eliminar-producto" onclick="eliminarProducto(this)">❌</button>
+    </div>`;
+
+  mostrarListasFirebase(true);
 });
 
+// Mostrar resultados en la sección "Consultar por Tienda"
 async function mostrarResultadosConsulta() {
   const filtroTienda = normalizarTexto(document.getElementById("filtroTienda").value);
   const filtroProducto = normalizarTexto(document.getElementById("filtroProducto").value);
@@ -88,19 +127,17 @@ async function mostrarResultadosConsulta() {
   resultados.innerHTML = "";
 
   try {
-    // Traemos todas las listas (podrías paginar si quieres)
-    const snapshot = await db.collection("listas").get();
+    const snapshot = await getDocs(collection(db, "listas"));
     let totalResultados = 0;
 
-    const listas = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const listas = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
 
-    listas.forEach(lista => {
+    listas.forEach((lista) => {
       const lugarNormalizado = normalizarTexto(lista.lugar);
-
       const coincideTienda = !filtroTienda || lugarNormalizado.includes(filtroTienda);
       if (!coincideTienda) return;
 
-      let productosFiltrados = lista.productos.filter(p => {
+      let productosFiltrados = lista.productos.filter((p) => {
         const nombreNormalizado = normalizarTexto(p.nombre);
         return !filtroProducto || nombreNormalizado.includes(filtroProducto);
       });
@@ -118,12 +155,16 @@ async function mostrarResultadosConsulta() {
         item.innerHTML = `
           <h3>🛍️ ${lista.lugar} — 📅 ${formatearFecha(lista.fecha)}</h3>
           <ul>
-            ${productosFiltrados.map(p => `
+            ${productosFiltrados
+              .map(
+                (p) => `
               <li>
                 <strong>${p.nombre}</strong> - 💲${p.precio.toFixed(2)}
                 ${p.descripcion ? `<div>📝 ${p.descripcion}</div>` : ""}
               </li>
-            `).join("")}
+            `
+              )
+              .join("")}
           </ul>
         `;
         resultados.appendChild(item);
@@ -135,7 +176,9 @@ async function mostrarResultadosConsulta() {
     }
 
     if (contador) {
-      contador.textContent = `${totalResultados} producto${totalResultados === 1 ? "" : "s"} encontrado${totalResultados === 1 ? "" : "s"}`;
+      contador.textContent = `${totalResultados} producto${totalResultados === 1 ? "" : "s"} encontrado${
+        totalResultados === 1 ? "" : "s"
+      }`;
       contador.classList.remove("cero", "pocos", "muchos");
       if (totalResultados === 0) {
         contador.classList.add("cero");
@@ -152,22 +195,19 @@ async function mostrarResultadosConsulta() {
 
 let listasMostradasCount = 10;
 
+// Mostrar listas en "Ver Listas"
 async function mostrarListasFirebase(resetCount = false) {
   if (resetCount) listasMostradasCount = 10;
 
   const filtroLugar = normalizarTexto(document.getElementById("filtroLugarListas").value);
 
   try {
-    // Traemos todas las listas ordenadas por fecha descendente
-    const snapshot = await db.collection("listas")
-      .orderBy("fecha", "desc")
-      .limit(listasMostradasCount)
-      .get();
+    const q = query(collection(db, "listas"), orderBy("fecha", "desc"), limit(listasMostradasCount));
+    const snapshot = await getDocs(q);
 
-    let listas = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    let listas = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
 
-    // Filtramos por lugar (después de obtener las listas)
-    listas = listas.filter(lista => normalizarTexto(lista.lugar).includes(filtroLugar));
+    listas = listas.filter((lista) => normalizarTexto(lista.lugar).includes(filtroLugar));
 
     const ul = document.getElementById("todasLasListas");
     ul.innerHTML = "";
@@ -178,12 +218,12 @@ async function mostrarListasFirebase(resetCount = false) {
       return;
     }
 
-    listas.forEach((lista, index) => {
+    listas.forEach((lista) => {
       const total = lista.productos.reduce((sum, p) => sum + p.precio, 0).toFixed(2);
 
-      const productosHTML = lista.productos.map(p => `
-        <li>- ${p.nombre} ($${p.precio.toFixed(2)}) ${p.descripcion ? `- ${p.descripcion}` : ""}</li>
-      `).join("");
+      const productosHTML = lista.productos
+        .map((p) => `<li>- ${p.nombre} ($${p.precio.toFixed(2)}) ${p.descripcion ? `- ${p.descripcion}` : ""}</li>`)
+        .join("");
 
       ul.innerHTML += `
         <li>
@@ -200,12 +240,7 @@ async function mostrarListasFirebase(resetCount = false) {
       `;
     });
 
-    // Mostrar u ocultar botón "Mostrar otros 10"
-    if (snapshot.size === listasMostradasCount) {
-      document.getElementById("btnCargarMas").style.display = "block";
-    } else {
-      document.getElementById("btnCargarMas").style.display = "none";
-    }
+    document.getElementById("btnCargarMas").style.display = snapshot.size === listasMostradasCount ? "block" : "none";
   } catch (error) {
     mostrarMensaje("❌ Error cargando listas: " + error.message);
   }
@@ -226,7 +261,7 @@ async function eliminarLista(id) {
   if (!confirmar) return;
 
   try {
-    await db.collection("listas").doc(id).delete();
+    await deleteDoc(doc(db, "listas", id));
     mostrarMensaje("✅ Lista eliminada con éxito");
     mostrarListasFirebase(true);
     mostrarResultadosConsulta();
@@ -235,6 +270,7 @@ async function eliminarLista(id) {
   }
 }
 
+// Funciones auxiliares
 function mostrarMensaje(texto) {
   const mensajeDiv = document.getElementById("mensaje");
   mensajeDiv.textContent = texto;
@@ -248,7 +284,6 @@ function mostrarMensaje(texto) {
 function formatearFecha(fechaStr) {
   if (!fechaStr) return "";
   let fecha = fechaStr;
-  // Si fechaStr es un Timestamp de Firebase, convertir a Date
   if (fechaStr.toDate) {
     fecha = fechaStr.toDate();
   } else if (typeof fechaStr === "string") {
@@ -257,35 +292,105 @@ function formatearFecha(fechaStr) {
   return fecha.toLocaleDateString("es-MX", {
     year: "numeric",
     month: "short",
-    day: "numeric"
+    day: "numeric",
   });
 }
 
 function normalizarTexto(texto) {
-  return texto
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "");
+  return texto.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 }
 
-// Sugerencias: para simplificar, aquí dejamos como no implementado,
-// pero podrías hacer consultas a Firestore si quieres.
-// O usar un arreglo local con productos más frecuentes, etc.
-function mostrarSugerencias(input) {
+// Sugerencias ()
+async function mostrarSugerencias(input) {
+  const valor = normalizarTexto(input.value);
   const contenedorSugerencias = input.nextElementSibling;
-  contenedorSugerencias.style.display = "none";
-  contenedorSugerencias.innerHTML = "";
+
+  if (valor.length < 2) {
+    contenedorSugerencias.style.display = "none";
+    contenedorSugerencias.innerHTML = "";
+    return;
+  }
+
+  try {
+    const snapshot = await getDocs(collection(db, "listas"));
+    const productosEncontrados = [];
+
+    snapshot.forEach((doc) => {
+      const lista = doc.data();
+      const productos = lista.productos || [];
+
+      productos.forEach((p) => {
+        const nombreNormalizado = normalizarTexto(p.nombre);
+        if (nombreNormalizado.includes(valor)) {
+          productosEncontrados.push({
+            nombre: p.nombre,
+            precio: p.precio,
+            descripcion: p.descripcion || "",
+            lugar: lista.lugar,
+            fecha: lista.fecha || lista.createdAt || new Date(),
+          });
+        }
+      });
+    });
+
+    if (productosEncontrados.length === 0) {
+      contenedorSugerencias.style.display = "none";
+      contenedorSugerencias.innerHTML = "";
+      return;
+    }
+
+    productosEncontrados.sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+
+    contenedorSugerencias.style.display = "block";
+    contenedorSugerencias.innerHTML =
+      productosEncontrados
+        .slice(0, 5)
+        .map((p) => `
+          <div class="sugerencia-item animate" onclick='seleccionarSugerencia(this, ${JSON.stringify(p)})'>
+            <div><strong>🛒 ${p.nombre}</strong></div>
+            <div>💲<strong>${p.precio.toFixed(2)}</strong></div>
+            <div>📍${p.lugar} — 🗓️ ${formatearFecha(p.fecha)}</div>
+            <div class="descripcion-sugerida">📝 ${p.descripcion}</div>
+          </div>
+        `)
+        .join("") + `<div style="height: 20px;"></div>`;
+  } catch (error) {
+    console.error("Error al obtener sugerencias:", error);
+    contenedorSugerencias.style.display = "none";
+    contenedorSugerencias.innerHTML = "";
+  }
 }
 
 function seleccionarSugerencia(div, producto) {
-  // Lo mismo que antes, pero si quieres podrías ajustar.
+  const contenedorProducto = div.closest('.sugerencias').previousElementSibling.closest('.producto');
+  if (!contenedorProducto) return;
+
+  contenedorProducto.querySelector('.producto-nombre').value = producto.nombre;
+  contenedorProducto.querySelector('.producto-precio').value = producto.precio;
+  contenedorProducto.querySelector('.producto-desc').value = producto.descripcion;
+
+  const contenedorSugerencias = div.closest('.sugerencias');
+  contenedorSugerencias.innerHTML = "";
+  contenedorSugerencias.style.display = "none";
+
+  contenedorProducto.querySelector('.producto-precio').focus();
 }
 
+
+// Para que los eventos globales funcionen con funciones exportadas:
+window.mostrarSeccion = mostrarSeccion;
+window.agregarProducto = agregarProducto;
+window.eliminarProducto = eliminarProducto;
+window.alternarDetalle = alternarDetalle;
+window.eliminarLista = eliminarLista;
+window.mostrarSugerencias = mostrarSugerencias;
+window.seleccionarSugerencia = seleccionarSugerencia;
+
+// Inicialización al cargar página
 document.addEventListener("DOMContentLoaded", () => {
-  mostrarSeccion('agregar');
+  mostrarSeccion("agregar");
   mostrarListasFirebase(true);
 
-  // Agregar listeners para filtros en consulta
   document.getElementById("filtroTienda").addEventListener("input", mostrarResultadosConsulta);
   document.getElementById("filtroProducto").addEventListener("input", mostrarResultadosConsulta);
   document.getElementById("ordenarPor").addEventListener("change", mostrarResultadosConsulta);

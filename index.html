@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Lista de Compras</title>
   <link rel="stylesheet" href="style.css" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" />
@@ -11,9 +11,9 @@
   <header>
     <h1>Mi Lista de Compras</h1>
     <nav>
-        <button onclick="mostrarSeccion('agregar')">Agregar Lista</button>
-        <button onclick="mostrarSeccion('consultar')">Consultar por Tienda</button>
-        <button onclick="mostrarSeccion('verListas')">Ver Listas</button>
+      <button onclick="mostrarSeccion('agregar')">Agregar Lista</button>
+      <button onclick="mostrarSeccion('consultar')">Consultar por Tienda</button>
+      <button onclick="mostrarSeccion('verListas')">Ver Listas</button>
     </nav>      
   </header>
 
@@ -25,15 +25,15 @@
         <input type="text" id="lugar" placeholder="Lugar de compra" required />
         <input type="date" id="fecha" required />
         <div id="productos">
-            <div class="producto">
-                <div class="inputs-container">
-                  <input type="text" placeholder="Producto" class="producto-nombre" required oninput="mostrarSugerencias(this)" />
-                  <div class="sugerencias"></div>
-                  <input type="number" placeholder="Precio" class="producto-precio" required />
-                  <input type="text" placeholder="Descripción (opcional)" class="producto-desc" />
-                </div>
-                <button type="button" class="eliminar-producto" onclick="eliminarProducto(this)">❌</button>
-            </div>                          
+          <div class="producto">
+            <div class="inputs-container">
+              <input type="text" placeholder="Producto" class="producto-nombre" required oninput="mostrarSugerencias(this)" />
+              <div class="sugerencias"></div>
+              <input type="number" placeholder="Precio" class="producto-precio" required />
+              <input type="text" placeholder="Descripción (opcional)" class="producto-desc" />
+            </div>
+            <button type="button" class="eliminar-producto" onclick="eliminarProducto(this)">❌</button>
+          </div>                          
         </div>
         <button type="button" onclick="agregarProducto()">Agregar otro producto</button>
         <button type="submit">Guardar Lista</button>
@@ -68,25 +68,7 @@
 
   <div id="mensaje" class="mensaje oculto"></div>
 
-  <!-- Firebase SDKs -->
-  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js"></script>
-  <script>
-    const firebaseConfig = {
-      apiKey: "AIzaSyCGXnX8UJtLC0Jn1oEo6huZqz_ZkmyGO84",
-      authDomain: "listascompras-94a64.firebaseapp.com",
-      projectId: "listascompras-94a64",
-      storageBucket: "listascompras-94a64.appspot.com",
-      messagingSenderId: "792067541567",
-      appId: "1:792067541567:web:f73cf92dd79843d962068a",
-      measurementId: "G-YZ02H3KCZC"
-    };
-
-    const app = firebase.initializeApp(firebaseConfig);
-    const db = firebase.firestore();
-  </script>
-
-  <!-- Tu script personalizado -->
-  <script src="script.js"></script>
+  <!-- Carga tu script.js que contiene la configuración y lógica modular -->
+  <script type="module" src="script.js"></script>
 </body>
 </html>
