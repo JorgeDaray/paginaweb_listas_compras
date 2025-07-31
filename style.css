@@ -242,6 +242,10 @@
     margin-top: 3px;
   }
   
+  .inputs-container {
+    position: relative; /* para posicionar las sugerencias */
+  }
+  
   /* Para animación simple de aparición */
   @keyframes fadeIn {
     from { opacity: 0; transform: translateY(5px); }

@@ -41,36 +41,52 @@
     </section>
 
     <!-- Sección Consultar por Tienda -->
-<section id="consultar" class="seccion oculto">
-    <h2>🔎 Consultar Compras</h2>
-    
-    <div style="display: flex; flex-direction: column; gap: 0.5em;">
-      <input type="text" id="filtroTienda" placeholder="Buscar por tienda..." />
-      <input type="text" id="filtroProducto" placeholder="Buscar por producto..." />
-  
-      <!-- Selector para ordenar resultados -->
-      <label for="ordenarPor">Ordenar por:</label>
-      <select id="ordenarPor">
-        <option value="">-- Seleccionar --</option>
-        <option value="precio">Precio</option>
-        <option value="nombre">Nombre</option>
-      </select>
-    </div>
-     <!-- Aquí el contador -->
-    <div id="contadorResultados" style="margin-top: 0.5em; font-weight: bold;"></div>
-  
-    <ul id="listaResultados"></ul>
-  </section>  
+    <section id="consultar" class="seccion oculto">
+      <h2>🔎 Consultar Compras</h2>
+      <div style="display: flex; flex-direction: column; gap: 0.5em;">
+        <input type="text" id="filtroTienda" placeholder="Buscar por tienda..." />
+        <input type="text" id="filtroProducto" placeholder="Buscar por producto..." />
+        <label for="ordenarPor">Ordenar por:</label>
+        <select id="ordenarPor">
+          <option value="">-- Seleccionar --</option>
+          <option value="precio">Precio</option>
+          <option value="nombre">Nombre</option>
+        </select>
+      </div>
+      <div id="contadorResultados" style="margin-top: 0.5em; font-weight: bold;"></div>
+      <ul id="listaResultados"></ul>
+    </section>  
 
     <!-- Sección Ver Listas -->
     <section id="verListas" class="seccion oculto">
-        <h2>Listas completas por fecha y lugar</h2>
-        <input type="text" id="filtroLugarListas" placeholder="Filtrar por lugar de compra..." oninput="mostrarListas(true)" />
-        <ul id="todasLasListas"></ul>
-        <button id="btnCargarMas" onclick="cargarMasListas()" style="display:none; margin-top: 10px;">Mostrar otros 10</button>
-      </section>      
+      <h2>Listas completas por fecha y lugar</h2>
+      <input type="text" id="filtroLugarListas" placeholder="Filtrar por lugar de compra..." oninput="mostrarListasFirebase(true)" />
+      <ul id="todasLasListas"></ul>
+      <button id="btnCargarMas" onclick="cargarMasListas()" style="display:none; margin-top: 10px;">Mostrar otros 10</button>
+    </section>      
   </main>
+
   <div id="mensaje" class="mensaje oculto"></div>
+
+  <!-- Firebase SDKs -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js"></script>
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyCGXnX8UJtLC0Jn1oEo6huZqz_ZkmyGO84",
+      authDomain: "listascompras-94a64.firebaseapp.com",
+      projectId: "listascompras-94a64",
+      storageBucket: "listascompras-94a64.appspot.com",
+      messagingSenderId: "792067541567",
+      appId: "1:792067541567:web:f73cf92dd79843d962068a",
+      measurementId: "G-YZ02H3KCZC"
+    };
+
+    const app = firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+  </script>
+
+  <!-- Tu script personalizado -->
   <script src="script.js"></script>
 </body>
 </html>
