@@ -31,6 +31,18 @@ const app = initializeApp(firebaseConfig);
 const analytics = getAnalytics(app);
 const db = getFirestore(app);
 
+import { enableIndexedDbPersistence } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
+
+enableIndexedDbPersistence(db).catch((err) => {
+  if (err.code == 'failed-precondition') {
+    // Esto pasa si tienes múltiples pestañas abiertas con Firestore en el mismo dominio
+    console.warn("No se puede habilitar persistencia porque hay múltiples pestañas abiertas.");
+  } else if (err.code == 'unimplemented') {
+    // El navegador no soporta persistencia offline
+    console.warn("El navegador no soporta persistencia offline.");
+  }
+});
+
 // Mostrar/ocultar secciones
 export function mostrarSeccion(id) {
   document.querySelectorAll(".seccion").forEach((sec) => {
