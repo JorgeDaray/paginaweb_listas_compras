@@ -1,6 +1,8 @@
 // script.js
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-app.js";
 import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-analytics.js";
+import { logEvent } from "firebase/analytics";
+logEvent(analytics, 'producto_busqueda', { nombre: p.nombre });
 import {
   getFirestore,
   collection,
@@ -375,7 +377,6 @@ function seleccionarSugerencia(div, producto) {
 
   contenedorProducto.querySelector('.producto-precio').focus();
 }
-
 
 // Para que los eventos globales funcionen con funciones exportadas:
 window.mostrarSeccion = mostrarSeccion;
