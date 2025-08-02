@@ -20,8 +20,9 @@
   <main>
     <!-- Sección Agregar Lista -->
     <section id="agregar" class="seccion">
-      <h2>Agregar Lista de Compras</h2>
+      <h2 id="tituloFormulario">Agregar Lista de Compras</h2>
       <form id="formLista">
+        <input type="hidden" id="idListaEditando" />
         <input type="text" id="lugar" placeholder="Lugar de compra" required />
         <input type="date" id="fecha" required />
         <div id="productos">

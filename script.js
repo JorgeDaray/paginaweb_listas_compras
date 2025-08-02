@@ -11,6 +11,7 @@ import {
   limit,
   deleteDoc,
   doc,
+  updateDoc,
   serverTimestamp,
 } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
 
@@ -111,9 +112,26 @@ document.getElementById("formLista").addEventListener("submit", async (e) => {
 
   if (hayError || productos.length === 0) return;
 
-  await guardarLista({ lugar, fecha, productos });
+  const idLista = document.getElementById("idListaEditando").value;
+  if (idLista) {
+    try {
+      await updateDoc(doc(db, "listas", idLista), {
+        lugar,
+        fecha,
+        productos,
+      });
+      mostrarMensaje("✅ Lista actualizada correctamente");
+    } catch (error) {
+      mostrarMensaje("❌ Error actualizando la lista: " + error.message);
+    }
+  } else {
+    await guardarLista({ lugar, fecha, productos });
+  }  
 
   e.target.reset();
+  document.getElementById("idListaEditando").value = "";
+  document.getElementById("tituloFormulario").textContent = "Agregar Lista de Compras";
+
   document.getElementById("productos").innerHTML = `
     <div class="producto">
       <div class="inputs-container">
@@ -244,8 +262,9 @@ async function mostrarListasFirebase(resetCount = false) {
             🏪 <em>${lista.lugar}</em><br>
             💰 Total: $${total}
             <div id="detalle-${lista.id}" class="detalle-lista oculto">
-                <ul>${productosHTML}</ul>
-                <button onclick="eliminarLista('${lista.id}')">🗑️ Eliminar esta lista</button>
+              <ul>${productosHTML}</ul>
+              <button onclick="editarLista('${lista.id}')">✏️ Editar esta lista</button>
+              <button onclick="eliminarLista('${lista.id}')">🗑️ Eliminar esta lista</button>
             </div>
           </div>
         </li>
@@ -388,6 +407,44 @@ function seleccionarSugerencia(div, producto) {
   contenedorProducto.querySelector('.producto-precio').focus();
 }
 
+async function editarLista(id) {
+  try {
+    const ref = doc(db, "listas", id);
+    const snap = await getDocs(collection(db, "listas"));
+    const listaDoc = snap.docs.find((d) => d.id === id);
+    if (!listaDoc) return mostrarMensaje("❌ Lista no encontrada");
+
+    const lista = listaDoc.data();
+
+    document.getElementById("lugar").value = lista.lugar;
+    document.getElementById("fecha").value = lista.fecha;
+    document.getElementById("idListaEditando").value = id;
+    document.getElementById("tituloFormulario").textContent = "Editar Lista de Compras";
+
+    const contenedor = document.getElementById("productos");
+    contenedor.innerHTML = "";
+
+    lista.productos.forEach((p) => {
+      const div = document.createElement("div");
+      div.className = "producto";
+      div.innerHTML = `
+        <div class="inputs-container">
+          <input type="text" placeholder="Producto" class="producto-nombre" value="${p.nombre}" required oninput="mostrarSugerencias(this)" />
+          <div class="sugerencias"></div>
+          <input type="number" placeholder="Precio" class="producto-precio" value="${p.precio}" required />
+          <input type="text" placeholder="Descripción (opcional)" class="producto-desc" value="${p.descripcion || ""}" />
+        </div>
+        <button type="button" class="eliminar-producto" onclick="eliminarProducto(this)">❌</button>
+      `;
+      contenedor.appendChild(div);
+    });
+
+    mostrarSeccion("agregar");
+    window.scrollTo(0, 0);
+  } catch (error) {
+    mostrarMensaje("❌ Error al cargar la lista: " + error.message);
+  }
+}
 
 // Para que los eventos globales funcionen con funciones exportadas:
 window.mostrarSeccion = mostrarSeccion;
@@ -397,6 +454,7 @@ window.alternarDetalle = alternarDetalle;
 window.eliminarLista = eliminarLista;
 window.mostrarSugerencias = mostrarSugerencias;
 window.seleccionarSugerencia = seleccionarSugerencia;
+window.editarLista = editarLista;
 
 // Inicialización al cargar página
 document.addEventListener("DOMContentLoaded", () => {
