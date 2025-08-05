@@ -5,16 +5,28 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Lista de Compras</title>
   <link rel="stylesheet" href="style.css" />
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" />
+  <link
+    rel="stylesheet"
+    href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"
+  />
 </head>
 <body>
   <header>
     <h1>Mi Lista de Compras</h1>
     <nav>
-      <button onclick="mostrarSeccion('agregar')">Agregar Lista</button>
-      <button onclick="mostrarSeccion('consultar')">Consultar por Tienda</button>
-      <button onclick="mostrarSeccion('verListas')">Ver Listas</button>
-    </nav>      
+      <button onclick="mostrarSeccion('agregar')">
+        <i class="fas fa-plus-circle"></i> Agregar Lista
+      </button>
+      <button onclick="mostrarSeccion('consultar')">
+        <i class="fas fa-store"></i> Consultar por Tienda
+      </button>
+      <button onclick="mostrarSeccion('verListas')">
+        <i class="fas fa-list-ul"></i> Ver Listas
+      </button>
+      <button onclick="mostrarSeccion('notificaciones')">
+        <i class="fas fa-bell"></i> Notificaciones
+      </button>
+    </nav>    
   </header>
 
   <main>
@@ -25,18 +37,45 @@
         <input type="hidden" id="idListaEditando" />
         <input type="text" id="lugar" placeholder="Lugar de compra" required />
         <input type="date" id="fecha" required />
+        <label>
+          <input type="checkbox" id="esPagoMensual" />
+          ¿Es pago mensual?
+        </label>
         <div id="productos">
           <div class="producto">
             <div class="inputs-container">
-              <input type="text" placeholder="Producto" class="producto-nombre" required oninput="mostrarSugerencias(this)" />
+              <input
+                type="text"
+                placeholder="Producto"
+                class="producto-nombre"
+                required
+                oninput="mostrarSugerencias(this)"
+              />
               <div class="sugerencias"></div>
-              <input type="number" placeholder="Precio" class="producto-precio" required />
-              <input type="text" placeholder="Descripción (opcional)" class="producto-desc" />
+              <input
+                type="number"
+                placeholder="Precio"
+                class="producto-precio"
+                required
+              />
+              <input
+                type="text"
+                placeholder="Descripción (opcional)"
+                class="producto-desc"
+              />
             </div>
-            <button type="button" class="eliminar-producto" onclick="eliminarProducto(this)">❌</button>
-          </div>                          
+            <button
+              type="button"
+              class="eliminar-producto"
+              onclick="eliminarProducto(this)"
+            >
+              ❌
+            </button>
+          </div>
         </div>
-        <button type="button" onclick="agregarProducto()">Agregar otro producto</button>
+        <button type="button" onclick="agregarProducto()">
+          Agregar otro producto
+        </button>
         <button type="submit">Guardar Lista</button>
       </form>
     </section>
@@ -46,7 +85,11 @@
       <h2>🔎 Consultar Compras</h2>
       <div style="display: flex; flex-direction: column; gap: 0.5em;">
         <input type="text" id="filtroTienda" placeholder="Buscar por tienda..." />
-        <input type="text" id="filtroProducto" placeholder="Buscar por producto..." />
+        <input
+          type="text"
+          id="filtroProducto"
+          placeholder="Buscar por producto..."
+        />
         <label for="ordenarPor">Ordenar por:</label>
         <select id="ordenarPor">
           <option value="">-- Seleccionar --</option>
@@ -56,20 +99,36 @@
       </div>
       <div id="contadorResultados" style="margin-top: 0.5em; font-weight: bold;"></div>
       <ul id="listaResultados"></ul>
-    </section>  
+    </section>
 
     <!-- Sección Ver Listas -->
     <section id="verListas" class="seccion oculto">
       <h2>Listas completas por fecha y lugar</h2>
-      <input type="text" id="filtroLugarListas" placeholder="Filtrar por lugar de compra..." oninput="mostrarListasFirebase(true)" />
+      <div style="margin-bottom:0.5em;">
+        <input
+          type="text"
+          id="filtroLugarListas"
+          placeholder="Filtrar por lugar de compra..."
+          oninput="mostrarListasFirebase(true)"
+        />
+        <button id="btnPendientes">Pendientes</button>
+        <button id="btnTodas">Todas</button>
+      </div>
       <ul id="todasLasListas"></ul>
-      <button id="btnCargarMas" onclick="cargarMasListas()" style="display:none; margin-top: 10px;">Mostrar otros 5</button>
-    </section>      
+      <button id="btnCargarMas" onclick="cargarMasListas()" style="display:none; margin-top: 10px;">
+        Mostrar otros 5
+      </button>
+    </section>
+
+    <!-- Sección Notificaciones -->
+    <section id="notificaciones" class="seccion oculto">
+      <h2>🔔 Notificaciones de Pagos</h2>
+      <ul id="listaNotificaciones"></ul>
+    </section>    
   </main>
 
   <div id="mensaje" class="mensaje oculto"></div>
 
-  <!-- Carga tu script.js que contiene la configuración y lógica modular -->
   <script type="module" src="script.js"></script>
 </body>
 </html>

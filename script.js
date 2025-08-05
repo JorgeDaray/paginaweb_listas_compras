@@ -87,8 +87,14 @@ async function guardarLista(nuevaLista) {
 // Evento submit del formulario
 document.getElementById("formLista").addEventListener("submit", async (e) => {
   e.preventDefault();
+
   const lugar = document.getElementById("lugar").value.trim();
-  const fecha = document.getElementById("fecha").value;
+  const fecha = document.getElementById("fecha").value;        // e.g. "2025-08-10"
+  const fechaObj = new Date(fecha);
+  const hoy = new Date();
+  // Si la fecha es estrictamente posterior a hoy, marcado como pendiente
+  const estado = fechaObj > hoy ? "pendiente" : "normal";
+
   const productos = [];
   let hayError = false;
 
@@ -113,25 +119,25 @@ document.getElementById("formLista").addEventListener("submit", async (e) => {
   if (hayError || productos.length === 0) return;
 
   const idLista = document.getElementById("idListaEditando").value;
+  const datos = { lugar, fecha, productos, estado };
+
   if (idLista) {
+    // Actualizar
     try {
-      await updateDoc(doc(db, "listas", idLista), {
-        lugar,
-        fecha,
-        productos,
-      });
+      await updateDoc(doc(db, "listas", idLista), datos);
       mostrarMensaje("✅ Lista actualizada correctamente");
     } catch (error) {
       mostrarMensaje("❌ Error actualizando la lista: " + error.message);
     }
   } else {
-    await guardarLista({ lugar, fecha, productos });
-  }  
+    // Crear nueva
+    await guardarLista({ ...datos, createdAt: serverTimestamp() });
+  }
 
+  // Reset del formulario
   e.target.reset();
   document.getElementById("idListaEditando").value = "";
   document.getElementById("tituloFormulario").textContent = "Agregar Lista de Compras";
-
   document.getElementById("productos").innerHTML = `
     <div class="producto">
       <div class="inputs-container">
@@ -224,20 +230,32 @@ async function mostrarResultadosConsulta() {
 }
 
 let listasMostradasCount = 5;
-
 // Mostrar listas en "Ver Listas"
-async function mostrarListasFirebase(resetCount = false) {
+// Mostrar listas en "Ver Listas"
+async function mostrarListasFirebase(resetCount = false, soloPendientes = false) {
   if (resetCount) listasMostradasCount = 5;
 
   const filtroLugar = normalizarTexto(document.getElementById("filtroLugarListas").value);
 
   try {
-    const q = query(collection(db, "listas"), orderBy("fecha", "desc"), limit(listasMostradasCount));
+    const q = query(
+      collection(db, "listas"),
+      orderBy("fecha", "desc"),
+      limit(listasMostradasCount)
+    );
     const snapshot = await getDocs(q);
 
-    let listas = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+    let listas = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-    listas = listas.filter((lista) => normalizarTexto(lista.lugar).includes(filtroLugar));
+    // Filtrar por lugar
+    listas = listas.filter(l => normalizarTexto(l.lugar).includes(filtroLugar));
+
+    // Filtrar por pendientes si aplica
+    if (soloPendientes) {
+      listas = listas.filter(l =>
+        l.estado === "pendiente" || l.productos.some(p => p.precio === 0)
+      );
+    }
 
     const ul = document.getElementById("todasLasListas");
     ul.innerHTML = "";
@@ -248,34 +266,34 @@ async function mostrarListasFirebase(resetCount = false) {
       return;
     }
 
-    listas.forEach((lista) => {
+    listas.forEach(lista => {
       const total = lista.productos.reduce((sum, p) => sum + p.precio, 0).toFixed(2);
-      const tienePendientes = lista.productos.some((p) => p.precio === 0);
-      const iconoPendiente = tienePendientes ? '🕒 <strong style="color: #fbc02d;">PENDIENTE</strong><br>' : '';
+
+      const pendienteFecha = lista.estado === "pendiente";
+      const pendienteProducto = lista.productos.some(p => p.precio === 0);
+
+      let badge = "";
+      if (pendienteFecha) {
+        badge += '🕒 <strong style="color:#fbc02d">PENDIENTE (Fecha)</strong><br>';
+      }
+      if (pendienteProducto) {
+        badge += '⌛ <strong style="color:#fbc02d">Productos pendientes</strong><br>';
+      }
 
       const productosHTML = lista.productos
-        .map((p) => {
-          const pendienteIcono = p.precio === 0
-          ? `<i class="fa-solid fa-hourglass-half" title="Producto pendiente (precio 0)" style="color: #fbc02d; margin-left: 6px;"></i>`
-          : "";
-
-          return `<li>- ${p.nombre} ${pendienteIcono} ($${p.precio.toFixed(2)}) ${p.descripcion ? `- ${p.descripcion}` : ""}</li>`;
+        .map(p => {
+          const iconoP = p.precio === 0
+            ? `<i class="fa-solid fa-hourglass-half" title="Precio 0" style="color: #fbc02d;"></i>`
+            : "";
+          return `<li>${p.nombre} ${iconoP} — $${p.precio.toFixed(2)}${p.descripcion ? ` — ${p.descripcion}` : ""}</li>`;
         })
         .join("");
 
-        ul.innerHTML += `
+      ul.innerHTML += `
         <li>
-          <div class="lista-item" onclick="alternarDetalle('${lista.id}')">
-            <div class="info-pendiente-contenedor">
-              <div class="info-lista">
-                📅 <strong>${formatearFecha(lista.fecha)}</strong><br>
-                🏪 <em>${lista.lugar}</em><br>
-                💰 Total: $${total}
-              </div>
-              <div class="estado-pendiente">
-                ${iconoPendiente}
-              </div>
-            </div>
+          <div class="lista-item resumen" onclick="alternarDetalle('${lista.id}')">
+            📅 <strong>${formatearFecha(lista.fecha)}</strong> — 🏪 <em>${lista.lugar}</em> — 💰 $${total}
+            <div class="badge-pendiente">${badge}</div>
           </div>
           <div id="detalle-${lista.id}" class="detalle-lista oculto">
             <ul>${productosHTML}</ul>
@@ -286,7 +304,9 @@ async function mostrarListasFirebase(resetCount = false) {
       `;
     });
 
-    document.getElementById("btnCargarMas").style.display = snapshot.size === listasMostradasCount ? "block" : "none";
+    document.getElementById("btnCargarMas").style.display =
+      snapshot.size === listasMostradasCount ? "block" : "none";
+
   } catch (error) {
     mostrarMensaje("❌ Error cargando listas: " + error.message);
   }
@@ -480,4 +500,11 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("filtroTienda").addEventListener("input", mostrarResultadosConsulta);
   document.getElementById("filtroProducto").addEventListener("input", mostrarResultadosConsulta);
   document.getElementById("ordenarPor").addEventListener("change", mostrarResultadosConsulta);
+  document.getElementById("btnPendientes").addEventListener("click", () => {
+    mostrarListasFirebase(true, true); // resetCount=true, soloPendientes=true
+  });
+  document.getElementById("btnTodas").addEventListener("click", () => {
+    mostrarListasFirebase(true, false); // resetCount=true, soloPendientes=false
+  });
+    
 });
