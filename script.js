@@ -223,11 +223,11 @@ async function mostrarResultadosConsulta() {
   }
 }
 
-let listasMostradasCount = 10;
+let listasMostradasCount = 5;
 
 // Mostrar listas en "Ver Listas"
 async function mostrarListasFirebase(resetCount = false) {
-  if (resetCount) listasMostradasCount = 10;
+  if (resetCount) listasMostradasCount = 5;
 
   const filtroLugar = normalizarTexto(document.getElementById("filtroLugarListas").value);
 
@@ -293,7 +293,7 @@ async function mostrarListasFirebase(resetCount = false) {
 }
 
 function cargarMasListas() {
-  listasMostradasCount += 10;
+  listasMostradasCount += 5;  // cambiar 10 por 5
   mostrarListasFirebase();
 }
 
@@ -470,6 +470,7 @@ window.eliminarLista = eliminarLista;
 window.mostrarSugerencias = mostrarSugerencias;
 window.seleccionarSugerencia = seleccionarSugerencia;
 window.editarLista = editarLista;
+window.cargarMasListas = cargarMasListas;
 
 // Inicialización al cargar página
 document.addEventListener("DOMContentLoaded", () => {
