@@ -275,6 +275,28 @@
     color: #388e3c; /* verde */
   }
   
+  .info-pendiente-contenedor {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap; /* Para móviles */
+    padding: 8px;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    background-color: #f9f9f9;
+  }
+  
+  .info-lista {
+    flex-grow: 1;
+    min-width: 180px;
+  }
+  
+  .estado-pendiente {
+    margin-left: 10px;
+    color: #fbc02d;
+    font-weight: bold;
+    white-space: nowrap;
+  }  
   
   /* RESPONSIVE - MÓVILES */
   @media (max-width: 600px) {

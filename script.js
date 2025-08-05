@@ -102,7 +102,7 @@ document.getElementById("formLista").addEventListener("submit", async (e) => {
       hayError = true;
       return;
     }
-    if (isNaN(precio) || precio <= 0) {
+    if (isNaN(precio) || precio < 0) {
       mostrarMensaje(`❌ El producto "${nombre || "sin nombre"}" tiene un precio inválido.`);
       hayError = true;
       return;
@@ -250,22 +250,37 @@ async function mostrarListasFirebase(resetCount = false) {
 
     listas.forEach((lista) => {
       const total = lista.productos.reduce((sum, p) => sum + p.precio, 0).toFixed(2);
+      const tienePendientes = lista.productos.some((p) => p.precio === 0);
+      const iconoPendiente = tienePendientes ? '🕒 <strong style="color: #fbc02d;">PENDIENTE</strong><br>' : '';
 
       const productosHTML = lista.productos
-        .map((p) => `<li>- ${p.nombre} ($${p.precio.toFixed(2)}) ${p.descripcion ? `- ${p.descripcion}` : ""}</li>`)
+        .map((p) => {
+          const pendienteIcono = p.precio === 0
+          ? `<i class="fa-solid fa-hourglass-half" title="Producto pendiente (precio 0)" style="color: #fbc02d; margin-left: 6px;"></i>`
+          : "";
+
+          return `<li>- ${p.nombre} ${pendienteIcono} ($${p.precio.toFixed(2)}) ${p.descripcion ? `- ${p.descripcion}` : ""}</li>`;
+        })
         .join("");
 
-      ul.innerHTML += `
+        ul.innerHTML += `
         <li>
-          <div onclick="alternarDetalle('${lista.id}')" style="cursor: pointer;">
-            📅 <strong>${formatearFecha(lista.fecha)}</strong><br>
-            🏪 <em>${lista.lugar}</em><br>
-            💰 Total: $${total}
-            <div id="detalle-${lista.id}" class="detalle-lista oculto">
-              <ul>${productosHTML}</ul>
-              <button onclick="editarLista('${lista.id}')">✏️ Editar esta lista</button>
-              <button onclick="eliminarLista('${lista.id}')">🗑️ Eliminar esta lista</button>
+          <div class="lista-item" onclick="alternarDetalle('${lista.id}')">
+            <div class="info-pendiente-contenedor">
+              <div class="info-lista">
+                📅 <strong>${formatearFecha(lista.fecha)}</strong><br>
+                🏪 <em>${lista.lugar}</em><br>
+                💰 Total: $${total}
+              </div>
+              <div class="estado-pendiente">
+                ${iconoPendiente}
+              </div>
             </div>
+          </div>
+          <div id="detalle-${lista.id}" class="detalle-lista oculto">
+            <ul>${productosHTML}</ul>
+            <button onclick="editarLista('${lista.id}')">✏️ Editar esta lista</button>
+            <button onclick="eliminarLista('${lista.id}')">🗑️ Eliminar esta lista</button>
           </div>
         </li>
       `;
