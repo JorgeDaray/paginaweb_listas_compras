@@ -152,6 +152,52 @@ document.getElementById("formLista").addEventListener("submit", async (e) => {
   mostrarListasFirebase(true);
 });
 
+async function obtenerUltimaListaGuardada() {
+  const db = getFirestore();
+  const listasRef = collection(db, "listas");
+
+  // Si estás sin internet, lee desde localStorage
+  if (!navigator.onLine) {
+    const listaLocal = localStorage.getItem("ultimaLista");
+    if (listaLocal) {
+      return JSON.parse(listaLocal); // devuelve la lista guardada localmente
+    } else {
+      throw new Error("Lista no encontrada sin conexión");
+    }
+  }
+
+  // Si tienes internet, consulta Firestore
+  const q = query(listasRef, orderBy("fechaCreacion", "desc"), limit(1));
+  const querySnapshot = await getDocs(q);
+  if (!querySnapshot.empty) {
+    const doc = querySnapshot.docs[0];
+    const lista = { id: doc.id, ...doc.data() };
+
+    // Guardar una copia en localStorage
+    localStorage.setItem("ultimaLista", JSON.stringify(lista));
+
+    return lista;
+  } else {
+    throw new Error("No se encontraron listas");
+  }
+}
+
+async function guardarCambiosLista(idLista, datosLista) {
+  if (navigator.onLine) {
+    try {
+      const docRef = doc(db, "listas", idLista);
+      await updateDoc(docRef, datosLista);
+      mostrarMensaje("✅ Cambios guardados en la nube.");
+    } catch (e) {
+      mostrarMensaje("❌ Error al guardar en Firestore.");
+      guardarCambiosOffline(idLista, datosLista); // backup local si falla
+    }
+  } else {
+    mostrarMensaje("⚠️ Sin conexión. Guardando cambios localmente.");
+    guardarCambiosOffline(idLista, datosLista);
+  }
+}
+
 // Mostrar resultados en la sección "Consultar por Tienda"
 async function mostrarResultadosConsulta() {
   const filtroTienda = normalizarTexto(document.getElementById("filtroTienda").value);
@@ -227,6 +273,12 @@ async function mostrarResultadosConsulta() {
   } catch (error) {
     mostrarMensaje("❌ Error al consultar: " + error.message);
   }
+}
+
+function guardarCambiosOffline(idLista, datosLista) {
+  let listasPendientes = JSON.parse(localStorage.getItem("listasPendientes") || "{}");
+  listasPendientes[idLista] = datosLista;
+  localStorage.setItem("listasPendientes", JSON.stringify(listasPendientes));
 }
 
 let listasMostradasCount = 5;
@@ -491,6 +543,27 @@ window.mostrarSugerencias = mostrarSugerencias;
 window.seleccionarSugerencia = seleccionarSugerencia;
 window.editarLista = editarLista;
 window.cargarMasListas = cargarMasListas;
+window.addEventListener("online", async () => {
+  mostrarMensaje("🔗 Conexión restablecida");
+
+  let listasPendientes = JSON.parse(localStorage.getItem("listasPendientes") || "{}");
+
+  for (const id in listasPendientes) {
+    try {
+      await updateDoc(doc(db, "listas", id), listasPendientes[id]);
+      mostrarMensaje(`✅ Lista '${id}' sincronizada.`);
+      delete listasPendientes[id]; // eliminar si se sincroniza correctamente
+    } catch (e) {
+      mostrarMensaje(`❌ Error al sincronizar lista '${id}'.`);
+    }
+  }
+
+  localStorage.setItem("listasPendientes", JSON.stringify(listasPendientes));
+});
+window.addEventListener("offline", () => {
+  mostrarMensaje("⚠️ Sin conexión. Los datos se guardarán localmente y se sincronizarán al reconectarse.");
+});
+
 
 // Inicialización al cargar página
 document.addEventListener("DOMContentLoaded", () => {
