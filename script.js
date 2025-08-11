@@ -1,4 +1,4 @@
-// script.js (versión actualizada: muestra descripción en notificaciones + coloreado por días)
+// script.js (versión actualizada: pago mensual, reactivar notifs checkbox, cerrar sugerencias click fuera)
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-app.js";
 import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-analytics.js";
 import {
@@ -58,6 +58,20 @@ function parseFechaFromString(fechaStr) {
 function startOfDay(d) { return new Date(d.getFullYear(), d.getMonth(), d.getDate()); }
 function addDays(d, days) { const r = new Date(d); r.setDate(r.getDate() + days); return r; }
 function dateAtHour(d, hour = NOTIFY_HOUR) { const r = startOfDay(d); r.setHours(hour,0,0,0); return r; }
+function pad(n){ return String(n).padStart(2,'0'); }
+function formatDateToInput(d){ if(!d) return ''; const y=d.getFullYear(), m=d.getMonth()+1, day=d.getDate(); return `${y}-${pad(m)}-${pad(day)}`; }
+function daysInMonth(year, month){ return new Date(year, month+1, 0).getDate(); }
+function addMonthsKeepDay(date, months){
+  const y = date.getFullYear();
+  const m = date.getMonth();
+  const d = date.getDate();
+  const targetMonth = m + months;
+  const targetYear = y + Math.floor(targetMonth/12);
+  const monthIndex = ((targetMonth%12)+12)%12;
+  const dim = daysInMonth(targetYear, monthIndex);
+  const newDay = Math.min(d, dim);
+  return new Date(targetYear, monthIndex, newDay);
+}
 
 /* ======= STORAGE SCHEDULE ======= */
 const scheduledTimeouts = new Map();
@@ -102,9 +116,57 @@ function esPendientePorFechaOnly(lista) {
   return listaDay.getTime() <= limite.getTime();
 }
 
+/* ======= MONTHLY HELPERS ======= */
+async function advanceMonthlyIfPastForAll() {
+  if (!navigator.onLine) return;
+  try {
+    const snap = await getDocs(collection(db, 'listas'));
+    for (const d of snap.docs) {
+      const lista = { id: d.id, ...d.data() };
+      if (lista.pagoMensual) {
+        let f = parseFechaFromString(lista.fecha);
+        const hoy = startOfDay(new Date());
+        if (!f) continue;
+        let advanced = false;
+        while (startOfDay(f).getTime() < hoy.getTime()) {
+          f = addMonthsKeepDay(f, 1);
+          advanced = true;
+        }
+        if (advanced) {
+          try {
+            await updateDoc(doc(db, 'listas', lista.id), { fecha: formatDateToInput(f), _notificacionDescartada: false, estado: 'pendiente', completada: false });
+            cancelScheduledNotificationsForList(lista.id);
+          } catch(e){ console.error('Error advancing mensual:', e); }
+        }
+      }
+    }
+  } catch(e){ console.error('advanceMonthlyIfPastForAll error:', e); }
+}
+
+async function advanceMonthlyList(lista) {
+  try {
+    const f = parseFechaFromString(lista.fecha);
+    if (!f) return;
+    const nueva = addMonthsKeepDay(f, 1);
+    const nuevaStr = formatDateToInput(nueva);
+    await updateDoc(doc(db, 'listas', lista.id), { fecha: nuevaStr, _notificacionDescartada: false, estado: 'pendiente', completada: false });
+    cancelScheduledNotificationsForList(lista.id);
+    const snap = await getDocs(collection(db, 'listas'));
+    const docu = snap.docs.find(d => d.id === lista.id);
+    if (docu) await scheduleNotificationsForList({ id: docu.id, ...docu.data() });
+    mostrarMensaje(`🔁 Pago mensual actualizado a ${formatearFecha(nuevaStr)}`);
+  } catch(e){ console.error('advanceMonthlyList error:', e); }
+}
+
 /* ======= SCHEDULER: programar notificaciones ======= */
 async function scheduleNotificationsForList(lista) {
   if (!lista || !lista.id || !lista.fecha) return;
+  const fParsed = parseFechaFromString(lista.fecha);
+  if (lista.pagoMensual && fParsed && startOfDay(fParsed).getTime() < startOfDay(new Date()).getTime()) {
+    if (navigator.onLine) { await advanceMonthlyList(lista); return; }
+    else { cancelScheduledNotificationsForList(lista.id); return; }
+  }
+
   if (lista.completada) { cancelScheduledNotificationsForList(lista.id); return; }
   if (!esPendientePorFechaOnly(lista)) { cancelScheduledNotificationsForList(lista.id); return; }
   await ensureNotificationPermission();
@@ -205,8 +267,12 @@ function escapeHtml(str) {
   return String(str).replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s]));
 }
 
+/* ======= ACTUALIZAR NOTIFICACIONES (marca expiradas y no muestra items pasados) ======= */
 async function actualizarNotificaciones(listasExternas = null) {
   try {
+    // Si hay listas mensuales con fecha pasada, adelantarlas (si estamos en línea)
+    if (navigator.onLine) await advanceMonthlyIfPastForAll();
+
     let listas = [];
     if (Array.isArray(listasExternas)) listas = listasExternas;
     else {
@@ -219,6 +285,29 @@ async function actualizarNotificaciones(listasExternas = null) {
         listas = cache ? JSON.parse(cache) : [];
       }
     }
+
+    // marcar como 'expirada' listas pendientes con fecha pasada (no mensuales)
+    const hoy = startOfDay(new Date());
+    for (const l of listas) {
+      try {
+        const f = parseFechaFromString(l.fecha);
+        if (!l.pagoMensual && l.estado === 'pendiente' && f && startOfDay(f).getTime() < hoy.getTime()) {
+          // cambiar estado localmente para que no aparezca en notifs
+          l.estado = 'expirada';
+          if (navigator.onLine) {
+            try { await updateDoc(doc(db, 'listas', l.id), { estado: 'expirada' }); }
+            catch(err){ console.error("No se pudo marcar expirada en servidor:", err); }
+          } else {
+            try {
+              let cache = JSON.parse(localStorage.getItem("listasCache") || "[]");
+              cache = cache.map(item => item.id === l.id ? ({ ...item, estado: 'expirada' }) : item);
+              localStorage.setItem("listasCache", JSON.stringify(cache));
+            } catch(e){ /* ignore */ }
+          }
+        }
+      } catch(e){ console.error("Error procesando expiradas:", e); }
+    }
+
     const pendientesPorFecha = listas.filter(l => esPendientePorFechaOnly(l));
     renderListaNotificaciones(pendientesPorFecha);
     pendientesPorFecha.forEach(lista => scheduleNotificationsForList(lista));
@@ -226,10 +315,9 @@ async function actualizarNotificaciones(listasExternas = null) {
 }
 
 function colorForDias(dias) {
-  // dias puede ser negativo -> vencida -> rojo
-  if (dias <= 3) return { border: "#e53e3e", bg: "#fff5f5" }; // rojo
-  if (dias <= 10) return { border: "#f59e0b", bg: "#fff7ed" }; // naranja/ámbar
-  return { border: "#10b981", bg: "#f0fdf4" }; // verde
+  if (dias <= 3) return { border: "#e53e3e", bg: "#fff5f5" };
+  if (dias <= 10) return { border: "#f59e0b", bg: "#fff7ed" };
+  return { border: "#10b981", bg: "#f0fdf4" };
 }
 
 function renderListaNotificaciones(pendientes) {
@@ -252,22 +340,20 @@ function renderListaNotificaciones(pendientes) {
                        `Vence en ${dias} día(s)`;
     const total = Array.isArray(lista.productos) ? lista.productos.reduce((s,p)=>s+(p.precio||0),0).toFixed(2) : "0.00";
 
-    // productos + descripción (igual que verListas)
     const productosHTML = (Array.isArray(lista.productos) ? lista.productos : []).map(p => {
       const iconoP = p.precio === 0 ? `<i class="fa-solid fa-hourglass-half" title="Precio 0" style="color: #f59e0b;"></i>` : "";
       return `<li>${escapeHtml(p.nombre)} ${iconoP} — $${(p.precio||0).toFixed(2)}${p.descripcion ? ` — ${escapeHtml(p.descripcion)}` : ""}</li>`;
     }).join("");
 
-    // color según días
     const colors = colorForDias(dias);
+    const pagoMensualBadge = lista.pagoMensual ? ' <span style="background:#3b82f6;color:#fff;padding:2px 6px;border-radius:6px;margin-left:8px;font-size:0.8em;">📆 PAGO MENSUAL</span>' : '';
     const resumenHTML = `
       <div class="lista-resumen" style="border-left:6px solid ${colors.border}; padding-left:8px; background:${colors.bg}; border-radius:4px;">
         <div style="display:flex; justify-content:space-between; align-items:center;">
           <div>
-            📅 <strong>${formatearFecha(lista.fecha)}</strong> — 🏪 <em>${escapeHtml(lista.lugar)}</em> — 💰 $${total}
+            📅 <strong>${formatearFecha(lista.fecha)}</strong> — 🏪 <em>${escapeHtml(lista.lugar)}</em> — 💰 $${total}${pagoMensualBadge}
             <div class="texto-estado" style="font-size:0.9em; color:#333; margin-top:4px;">${estadoTexto}</div>
           </div>
-          <div style="font-size:0.9em; color:#555;">ID: ${escapeHtml(lista.id)}</div>
         </div>
       </div>
     `;
@@ -288,7 +374,6 @@ function renderListaNotificaciones(pendientes) {
 
     li.innerHTML = resumenHTML + detalleProductosHTML + accionesHTML;
 
-    // click en li (excepto botones) alterna detalle productos y acciones
     li.addEventListener("click", (e) => {
       if (e.target && (e.target.matches("button") || e.target.closest("button"))) return;
       const panelAcc = li.querySelector(`#acciones-${lista.id}`);
@@ -297,7 +382,6 @@ function renderListaNotificaciones(pendientes) {
       if (panelAcc) panelAcc.classList.toggle("oculto");
     });
 
-    // botones con confirmaciones
     li.querySelectorAll(".accion-marcar").forEach(btn => btn.addEventListener("click", async (ev) => {
       ev.stopPropagation();
       const id = btn.dataset.id;
@@ -320,6 +404,30 @@ function renderListaNotificaciones(pendientes) {
 /* ======= ACCIONES: marcar hecha / descartar ======= */
 async function marcarListaComoHecha(id) {
   try {
+    let lista = null;
+    if (navigator.onLine) {
+      const snap = await getDocs(collection(db, 'listas'));
+      const docu = snap.docs.find(d => d.id === id);
+      if (docu) lista = { id: docu.id, ...docu.data() };
+    } else {
+      const cache = JSON.parse(localStorage.getItem('listasCache') || '[]');
+      lista = cache.find(l => l.id === id) || null;
+    }
+    if (!lista) return mostrarMensaje('❌ Lista no encontrada');
+
+    if (lista.pagoMensual) {
+      if (navigator.onLine) {
+        await advanceMonthlyList(lista);
+      } else {
+        guardarCambiosOffline(id, { fecha: formatDateToInput(addMonthsKeepDay(parseFechaFromString(lista.fecha), 1)), _notificacionDescartada: false, estado: 'pendiente', completada: false });
+        cancelScheduledNotificationsForList(id);
+        mostrarMensaje('🔁 Pago mensual marcado offline. Se actualizará cuando vuelva la conexión.');
+      }
+      await actualizarNotificaciones();
+      mostrarListasFirebase(true);
+      return;
+    }
+
     if (navigator.onLine) await updateDoc(doc(db, "listas", id), { estado: "normal", completada: true });
     else guardarCambiosOffline(id, { estado: "normal", completada: true });
     cancelScheduledNotificationsForList(id);
@@ -346,6 +454,8 @@ async function descartarNotificacion(id) {
 async function guardarLista(nuevaLista) {
   try {
     nuevaLista.createdAt = serverTimestamp();
+    // Asegurar que nuevas listas no estén descartadas por defecto
+    if (!('_notificacionDescartada' in nuevaLista)) nuevaLista._notificacionDescartada = false;
     await addDoc(collection(db, "listas"), nuevaLista);
     mostrarMensaje("✅ Lista guardada correctamente");
     actualizarNotificaciones();
@@ -366,6 +476,7 @@ async function eliminarLista(id) {
 }
 
 async function guardarCambiosLista(idLista, datosLista) {
+  // si el objeto no incluye explicitamente _notificacionDescartada, no lo tocamos
   if (navigator.onLine) {
     try {
       const docRef = doc(db, "listas", idLista);
@@ -397,15 +508,21 @@ async function mostrarListasFirebase(resetCount=false, soloPendientes=false) {
     const ul = document.getElementById("todasLasListas");
     if (!ul) return;
     ul.innerHTML = "";
-    if (listas.length === 0) { ul.innerHTML = "<li>No hay listas guardadas que coincidan con el filtro.</li>"; document.getElementById("btnCargarMas") && (document.getElementById("btnCargarMas").style.display = "none"); actualizarNotificaciones(); return; }
+    if (listas.length === 0) {
+      ul.innerHTML = "<li>No hay listas guardadas que coincidan con el filtro.</li>";
+      const btn = document.getElementById("btnCargarMas"); if (btn) btn.style.display = "none";
+      actualizarNotificaciones();
+      return;
+    }
     listas.forEach(lista => {
-      const total = lista.productos.reduce((sum,p)=>sum+(p.precio||0),0).toFixed(2);
+      const total = (lista.productos || []).reduce((sum,p)=>sum+(p.precio||0),0).toFixed(2);
       const pendienteFecha = lista.estado === "pendiente";
-      const pendienteProducto = lista.productos.some(p => p.precio === 0);
+      const pendienteProducto = Array.isArray(lista.productos) && lista.productos.some(p => p.precio === 0);
       let badge = "";
       if (pendienteFecha) badge += '🕒 <strong style="color:#fbc02d">PENDIENTE (Fecha)</strong><br>';
       if (pendienteProducto) badge += '⌛ <strong style="color:#fbc02d">Productos pendientes</strong><br>';
-      const productosHTML = lista.productos.map(p => {
+      if (lista.pagoMensual) badge += '📆 <strong style="color:#3b82f6">PAGO MENSUAL</strong><br>';
+      const productosHTML = (lista.productos || []).map(p => {
         const iconoP = p.precio === 0 ? `<i class="fa-solid fa-hourglass-half" title="Precio 0" style="color: #f59e0b;"></i>` : "";
         return `<li>${escapeHtml(p.nombre)} ${iconoP} — $${(p.precio||0).toFixed(2)}${p.descripcion ? ` — ${escapeHtml(p.descripcion)}` : ""}</li>`;
       }).join("");
@@ -423,9 +540,10 @@ async function mostrarListasFirebase(resetCount=false, soloPendientes=false) {
         </li>
       `;
     });
-    document.getElementById("btnCargarMas") && (document.getElementById("btnCargarMas").style.display = snapshot.size === listasMostradasCount ? "block" : "none");
+    const btnCargar = document.getElementById("btnCargarMas");
+    if (btnCargar) btnCargar.style.display = (listas.length === listasMostradasCount) ? "block" : "none";
     actualizarNotificaciones();
-  } catch(e){ mostrarMensaje("❌ Error cargando listas: " + e.message); }
+  } catch(e){ mostrarMensaje("❌ Error cargando listas: " + e.message); console.error(e); }
 }
 function cargarMasListas(){ listasMostradasCount += 5; mostrarListasFirebase(); }
 function alternarDetalle(id){ const detalle = document.getElementById(`detalle-${id}`); if (detalle) detalle.classList.toggle("oculto"); }
@@ -480,7 +598,7 @@ async function mostrarSugerencias(input) {
   const valor = normalizarTexto(input.value || "");
   const contenedorSugerencias = input.nextElementSibling;
   if (!contenedorSugerencias) return;
-  if (valor.length < 2) { contenedorSugerencias.style.display = "none"; contenedorSugerencias.innerHTML = ""; return; }
+  if (valor.length < 2) { contenedorSugerencias.style.display = "none"; contenedorSugerencias.innerHTML = ""; contenedorSugerencias.setAttribute('aria-hidden','true'); return; }
   try {
     const snapshot = await getDocs(collection(db, "listas"));
     const productosEncontrados = [];
@@ -494,19 +612,20 @@ async function mostrarSugerencias(input) {
         }
       });
     });
-    if (productosEncontrados.length === 0) { contenedorSugerencias.style.display = "none"; contenedorSugerencias.innerHTML = ""; return; }
+    if (productosEncontrados.length === 0) { contenedorSugerencias.style.display = "none"; contenedorSugerencias.innerHTML = ""; contenedorSugerencias.setAttribute('aria-hidden','true'); return; }
     productosEncontrados.sort((a,b)=> new Date(b.fecha) - new Date(a.fecha));
     contenedorSugerencias.style.display = "block";
+    contenedorSugerencias.setAttribute('aria-hidden','false');
     contenedorSugerencias.innerHTML =
       productosEncontrados.slice(0,5).map(p => `
-        <div class="sugerencia-item animate" onclick='seleccionarSugerencia(this, ${JSON.stringify(p)})'>
+        <div class="sugerencia-item" onclick='seleccionarSugerencia(this, ${JSON.stringify(p)})'>
           <div><strong>🛒 ${escapeHtml(p.nombre)}</strong></div>
           <div>💲<strong>${(p.precio||0).toFixed(2)}</strong></div>
           <div>📍${escapeHtml(p.lugar)} — 🗓️ ${formatearFecha(p.fecha)}</div>
           <div class="descripcion-sugerida">📝 ${escapeHtml(p.descripcion)}</div>
         </div>
-      `).join("") + `<div style="height:20px;"></div>`;
-  } catch(e){ console.error("Error sugerencias:", e); contenedorSugerencias.style.display = "none"; contenedorSugerencias.innerHTML = ""; }
+      `).join("") + `<div style="height:6px;"></div>`;
+  } catch(e){ console.error("Error sugerencias:", e); contenedorSugerencias.style.display = "none"; contenedorSugerencias.innerHTML = ""; contenedorSugerencias.setAttribute('aria-hidden','true'); }
 }
 function seleccionarSugerencia(div, producto) {
   try {
@@ -516,7 +635,7 @@ function seleccionarSugerencia(div, producto) {
     contenedorProducto.querySelector('.producto-precio').value = producto.precio;
     contenedorProducto.querySelector('.producto-desc').value = producto.descripcion;
     const contenedorSugerencias = div.closest('.sugerencias');
-    contenedorSugerencias.innerHTML = ""; contenedorSugerencias.style.display = "none";
+    contenedorSugerencias.innerHTML = ""; contenedorSugerencias.style.display = "none"; contenedorSugerencias.setAttribute('aria-hidden','true');
     contenedorProducto.querySelector('.producto-precio').focus();
   } catch(e){ console.error("seleccionarSugerencia error:", e); }
 }
@@ -530,8 +649,29 @@ async function editarLista(id) {
     const lista = listaDoc.data();
     document.getElementById("lugar").value = lista.lugar;
     document.getElementById("fecha").value = lista.fecha;
+    if (document.getElementById("esPagoMensual")) document.getElementById("esPagoMensual").checked = !!lista.pagoMensual;
     document.getElementById("idListaEditando").value = id;
     document.getElementById("tituloFormulario").textContent = "Editar Lista de Compras";
+
+    // Inyectar checkbox de "Reactivar notificaciones" (si no existe)
+    const form = document.getElementById('formLista');
+    if (form) {
+      const existing = document.getElementById('reactivar-notif-container');
+      if (existing) existing.remove();
+      const checkboxHTML = `
+        <div id="reactivar-notif-container" style="margin-top:8px;">
+          <label style="font-size:0.95em;">
+            <input type="checkbox" id="reactivarNotifs" />
+            Reactivar notificaciones (si la lista estaba descartada)
+          </label>
+        </div>
+      `;
+      // insert after fecha input (if exists) or at end
+      const fechaEl = document.getElementById('fecha');
+      if (fechaEl && fechaEl.parentElement) fechaEl.insertAdjacentHTML('afterend', checkboxHTML);
+      else form.insertAdjacentHTML('beforeend', checkboxHTML);
+    }
+
     const contenedor = document.getElementById("productos");
     contenedor.innerHTML = "";
     lista.productos.forEach(p => {
@@ -540,7 +680,7 @@ async function editarLista(id) {
       div.innerHTML = `
         <div class="inputs-container">
           <input type="text" placeholder="Producto" class="producto-nombre" value="${escapeHtml(p.nombre)}" required oninput="mostrarSugerencias(this)" />
-          <div class="sugerencias"></div>
+          <div class="sugerencias" aria-hidden="true"></div>
           <input type="number" placeholder="Precio" class="producto-precio" value="${p.precio}" required />
           <input type="text" placeholder="Descripción (opcional)" class="producto-desc" value="${escapeHtml(p.descripcion || "")}" />
         </div>
@@ -550,7 +690,7 @@ async function editarLista(id) {
     });
     mostrarSeccion("agregar");
     window.scrollTo(0,0);
-  } catch(e){ mostrarMensaje("❌ Error al cargar la lista: " + e.message); }
+  } catch(e){ mostrarMensaje("❌ Error al cargar la lista: " + e.message); console.error(e); }
 }
 
 /* ======= FORM SUBMIT ======= */
@@ -575,9 +715,20 @@ document.getElementById("formLista")?.addEventListener("submit", async (e) => {
   });
   if (hayError || productos.length === 0) return;
   const idLista = document.getElementById("idListaEditando").value;
-  const datos = { lugar, fecha: fechaInput, productos, estado };
+  const esPagoMensual = !!document.getElementById("esPagoMensual") && document.getElementById("esPagoMensual").checked;
+  const datos = { lugar, fecha: fechaInput, productos, estado, pagoMensual: esPagoMensual };
+
+  // si estamos editando: revisar checkbox "reactivarNotifs"
+  const reactivarCheckbox = document.getElementById('reactivarNotifs');
+
   if (idLista) {
     try {
+      // Si el usuario pidió reactivar, pedir confirmación y aplicar _notificacionDescartada:false
+      if (reactivarCheckbox && reactivarCheckbox.checked) {
+        const confirmar = confirm("¿Confirmas que deseas reactivar las notificaciones para esta lista? Si confirmas, la lista volverá a aparecer en notificaciones si aplica.");
+        if (confirmar) datos._notificacionDescartada = false;
+        // si no confirma, no tocamos el campo y la lista queda como estaba
+      }
       await updateDoc(doc(db, "listas", idLista), datos);
       mostrarMensaje("✅ Lista actualizada correctamente");
       const snap = await getDocs(collection(db, "listas"));
@@ -588,18 +739,25 @@ document.getElementById("formLista")?.addEventListener("submit", async (e) => {
         await scheduleNotificationsForList(listaObj);
       }
       actualizarNotificaciones();
-    } catch(e){ mostrarMensaje("❌ Error actualizando la lista: " + e.message); }
+    } catch(e){ mostrarMensaje("❌ Error actualizando la lista: " + e.message); console.error(e); }
   } else {
-    await guardarLista({ ...datos, createdAt: serverTimestamp() });
+    // nueva lista: aseguramos que no esté descartada por defecto
+    await guardarLista({ ...datos, createdAt: serverTimestamp(), _notificacionDescartada: false });
   }
+
+  // limpiar formulario
   e.target.reset();
   document.getElementById("idListaEditando").value = "";
   document.getElementById("tituloFormulario").textContent = "Agregar Lista de Compras";
+  // remover contenedor reactivar si existe
+  const contReact = document.getElementById('reactivar-notif-container');
+  if (contReact) contReact.remove();
+
   document.getElementById("productos").innerHTML = `
     <div class="producto">
       <div class="inputs-container">
         <input type="text" placeholder="Producto" class="producto-nombre" required oninput="mostrarSugerencias(this)" />
-        <div class="sugerencias"></div>
+        <div class="sugerencias" aria-hidden="true"></div>
         <input type="number" placeholder="Precio" class="producto-precio" required />
         <input type="text" placeholder="Descripción (opcional)" class="producto-desc" />
       </div>
@@ -637,7 +795,7 @@ function agregarProducto() {
   div.innerHTML = `
     <div class="inputs-container">
       <input type="text" placeholder="Producto" class="producto-nombre" required oninput="mostrarSugerencias(this)" />
-      <div class="sugerencias"></div>
+      <div class="sugerencias" aria-hidden="true"></div>
       <input type="number" placeholder="Precio" class="producto-precio" required />
       <input type="text" placeholder="Descripción (opcional)" class="producto-desc" />
     </div>
@@ -671,6 +829,28 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("btnTodas")?.addEventListener("click", () => mostrarListasFirebase(true, false));
   rebuildScheduledTimeoutsFromStorage();
   actualizarNotificaciones();
+
+  // Cerrar sugerencias si se hace click fuera
+  document.addEventListener('click', (e) => {
+    if (e.target.closest('.sugerencias') || e.target.closest('.sugerencia-item') || e.target.closest('.producto-nombre')) {
+      return;
+    }
+    document.querySelectorAll('.sugerencias').forEach(s => {
+      s.style.display = 'none';
+      s.innerHTML = '';
+      s.setAttribute('aria-hidden','true');
+    });
+  });
+  // Escape para cerrar sugerencias
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      document.querySelectorAll('.sugerencias').forEach(s => {
+        s.style.display = 'none';
+        s.innerHTML = '';
+        s.setAttribute('aria-hidden','true');
+      });
+    }
+  });
 });
 
 /* ======= EXPONER FUNCIONES PARA HTML (onclick inline) ======= */

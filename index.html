@@ -13,22 +13,21 @@
 <body>
   <header>
     <h1>Mi Lista de Compras</h1>
-    <nav>
-      <button onclick="mostrarSeccion('agregar')">
-        <i class="fas fa-plus-circle"></i> Agregar Lista
+    <nav role="navigation" aria-label="Menú principal">
+      <button id="btnAgregar" onclick="mostrarSeccion('agregar')" aria-label="Agregar lista">
+        <i class="fas fa-plus-circle" aria-hidden="true"></i> Agregar Lista
       </button>
-      <button onclick="mostrarSeccion('consultar')">
-        <i class="fas fa-store"></i> Consultar por Tienda
+      <button id="btnConsultar" onclick="mostrarSeccion('consultar')" aria-label="Consultar por tienda">
+        <i class="fas fa-store" aria-hidden="true"></i> Consultar por Tienda
       </button>
-      <button onclick="mostrarSeccion('verListas')">
-        <i class="fas fa-list-ul"></i> Ver Listas
+      <button id="btnVerListas" onclick="mostrarSeccion('verListas')" aria-label="Ver listas">
+        <i class="fas fa-list-ul" aria-hidden="true"></i> Ver Listas
       </button>
-      <button onclick="mostrarSeccion('notificaciones')">
-        <i class="fas fa-bell"></i> Notificaciones
+      <button id="btnNotificaciones" onclick="mostrarSeccion('notificaciones')" aria-label="Notificaciones">
+        <i class="fas fa-bell" aria-hidden="true"></i> Notificaciones
       </button>
-    </nav>    
-  </header>
-
+    </nav>
+  </header>  
   <main>
     <!-- Sección Agregar Lista -->
     <section id="agregar" class="seccion">

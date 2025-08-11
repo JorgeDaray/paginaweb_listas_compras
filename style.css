@@ -1,420 +1,275 @@
-/* RESET BÁSICO */
-* {
-    box-sizing: border-box;
-    margin: 0;
-    padding: 0;
-  }
-  
-  body {
-    font-family: 'Segoe UI', Arial, sans-serif;
-    padding: 15px;
-    background-color: #f5f7fa;
-    color: #333;
-    line-height: 1.5;
-  }
-  
-  /* ENCABEZADO */
-  header {
-    text-align: center;
-    margin-bottom: 20px;
-  }
-  
-  h1 {
-    font-size: 1.8em;
-    color: #1976d2;
-    margin-bottom: 10px;
-  }
-  
-  /* NAVEGACIÓN */
-  nav {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
-    gap: 10px;
-  }
-  
-  nav button {
-    padding: 10px 15px;
-    border: none;
-    background-color: #1976d2;
-    color: white;
-    border-radius: 6px;
-    font-weight: bold;
-    cursor: pointer;
-    transition: background-color 0.3s ease, transform 0.2s ease;
-  }
-  
-  nav button:hover,
-  nav button:focus {
-    background-color: #1565c0;
-    outline: none;
-    transform: scale(1.05);
-  }
-  
-  /* SECCIONES */
-  .seccion {
-    margin-top: 25px;
-    transition: opacity 0.3s ease;
-  }
-  
-  .oculto {
-    display: none !important;
-    opacity: 0;
-  }
-  
-  /* TITULOS */
-  h2 {
-    margin-bottom: 15px;
-    font-size: 1.4em;
-    color: #444;
-  }
-  
-  /* FORMULARIOS E INPUTS */
-  input,
-  button,
-  textarea {
-    display: block;
-    width: 100%;
-    padding: 10px;
-    margin-top: 10px;
-    border-radius: 5px;
-    border: 1px solid #ccc;
-    font-size: 1em;
-    transition: border-color 0.3s ease, box-shadow 0.3s ease;
-  }
-  
-  input:focus,
-  textarea:focus {
-    border-color: #1976d2;
-    box-shadow: 0 0 8px rgba(25, 118, 210, 0.4);
-    outline: none;
-  }
-  
-  input::placeholder {
-    color: #888;
-  }
-  
-/* PRODUCTOS */
-.producto {
-    background-color: #ffffff;
-    padding: 15px 15px 15px 15px;
-    margin-bottom: 12px;
-    border: 1px solid #ddd;
-    border-radius: 6px;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-    transition: box-shadow 0.3s ease;
-    display: flex;
-    gap: 15px;
-    align-items: flex-start;
-    position: relative;
-  }
-  
-  .producto:hover {
-    box-shadow: 0 3px 8px rgba(25,118,210,0.3);
-  }
-  
-  /* Contenedor para inputs verticales */
-  .producto > div.inputs-container {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-  }
-  
-  /* Inputs estilo */
-  .producto input.producto-nombre,
-  .producto input.producto-precio,
-  .producto input.producto-desc {
-    width: 100%;
-    box-sizing: border-box;
-    padding-right: 12px; /* un poco de padding para no pegar iconos */
-    font-size: 1em;
-  }
-  
-  /* Botón eliminar producto */
-.eliminar-producto {
-    position: relative;  /* no absolute para no solapar inputs */
-    width: 36px;
-    height: 36px;
-    background: none;
-    border: none;
-    color: #e53935;
-    font-size: 24px;
-    cursor: pointer;
-    transition: color 0.3s ease;
-    flex-shrink: 0;
-    align-self: flex-start;
-    padding: 0;
-    line-height: 36px;
-    text-align: center;
-  }
-  
-  .eliminar-producto:hover {
-    color: #b71c1c;
-  }
-  
-  /* DETALLE DE LISTA */
-  .detalle-lista {
-    margin-top: 10px;
-    padding: 10px 15px;
-    background-color: #f0f0f0;
-    border-left: 4px solid #888;
-    border-radius: 5px;
-    margin-bottom: 10px;
-    font-size: 0.95em;
-    transition: max-height 0.4s ease, opacity 0.4s ease;
-  }
-  
-  .detalle-lista.oculto {
-    max-height: 0;
-    opacity: 0;
-    overflow: hidden;
-    padding: 0 15px;
-  }
-  
-  /* MENSAJE FLOTANTE */
-  .mensaje {
-    margin-top: 15px;
-    padding: 10px 15px;
-    border-radius: 6px;
-    background-color: #d4edda;
-    color: #155724;
-    border: 1px solid #c3e6cb;
-    max-width: 600px;
-    font-weight: bold;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
-    transition: opacity 0.4s ease;
-    position: fixed;
-    bottom: 20px;
-    right: 20px;
-    z-index: 1100;
-  }
-  
-  .mensaje.oculto {
-    opacity: 0;
-    pointer-events: none;
-    visibility: hidden;
-  }
-  
-  /* SUGERENCIAS */
-.sugerencias {
-    background: white;
-    border: 1px solid #ccc;
-    max-height: 220px;
-    overflow-y: auto;
-    display: none;
-    position: absolute;
-    width: 100%;
-    z-index: 1000;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-    border-radius: 5px;
-    font-size: 0.9em;
-    top: 100%;  /* justo abajo del input */
-    left: 0;
-    margin-top: 4px;
-  }
-  
-  /* Items sugerencia */
-  .sugerencia-item {
-    padding: 8px 12px;
-    border-bottom: 1px solid #eee;
-    cursor: pointer;
-    transition: background-color 0.3s ease;
-  }
-  
-  .sugerencia-item:last-child {
-    border-bottom: none;
-  }
-  
-  .sugerencia-item:hover,
-  .sugerencia-item.animate:hover {
-    background-color: #f0f0f0;
-  }
-  
-  .sugerencia-item div {
-    margin: 2px 0;
-  }
-  
-  .descripcion-sugerida {
-    font-style: italic;
-    color: #666;
-    font-size: 0.85em;
-    margin-top: 3px;
-  }
-  
-  .inputs-container {
-    position: relative; /* para posicionar las sugerencias */
-  }
-  
-  /* Para animación simple de aparición */
-  @keyframes fadeIn {
-    from { opacity: 0; transform: translateY(5px); }
-    to { opacity: 1; transform: translateY(0); }
-  }
-  
-  .animate {
-    animation: fadeIn 0.25s ease forwards;
-  }
-
-    /* Colores de contador de resultados */
-  #contadorResultados {
-    margin-top: 0.5em;
-    font-weight: bold;
-    transition: color 0.3s ease;
-  }
-  
-  #contadorResultados.cero {
-    color: #e53935; /* rojo */
-  }
-  
-  #contadorResultados.pocos {
-    color: #fbc02d; /* amarillo / advertencia */
-  }
-  
-  #contadorResultados.muchos {
-    color: #388e3c; /* verde */
-  }
-  
-  .info-pendiente-contenedor {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    flex-wrap: wrap; /* Para móviles */
-    padding: 8px;
-    border: 1px solid #ccc;
-    border-radius: 8px;
-    background-color: #f9f9f9;
-  }
-  
-  .info-lista {
-    flex-grow: 1;
-    min-width: 180px;
-  }
-  
-  .estado-pendiente {
-    margin-left: 10px;
-    color: #fbc02d;
-    font-weight: bold;
-    white-space: nowrap;
-  }  
-
-  /* RESPONSIVE - MÓVILES */
-  @media (max-width: 600px) {
-    nav {
-      flex-direction: column;
-      gap: 8px;
-    }
-  
-    h1 {
-      font-size: 1.5em;
-    }
-  
-    .mensaje {
-      font-size: 0.95em;
-      max-width: 90%;
-      bottom: 10px;
-      right: 5%;
-    }
-  }
-  
-  /* RESPONSIVE - ESCRITORIO */
-  @media screen and (min-width: 768px) {
-    body {
-      display: flex;
-      flex-direction: row;
-      align-items: flex-start;
-    }
-  
-    nav {
-      width: 240px;
-      flex-direction: column;
-      align-items: flex-start;
-      height: 100vh;
-      position: sticky;
-      top: 0;
-      padding: 20px 15px;
-      background-color: #ffffff;
-      border-right: 1px solid #ccc;
-      gap: 12px;
-    }
-  
-    nav button {
-      width: 100%;
-      font-size: 1em;
-    }
-  
-    main,
-    .seccion {
-      flex: 1;
-      padding: 20px;
-      margin-left: 10px;
-      max-width: 1000px;
-    }
-  
-    .mensaje {
-      position: fixed;
-      top: 20px;
-      right: 20px;
-      max-width: 300px;
-    }
-  }
-  
-  /* Badges para pendientes por fecha y por producto */
-.badge-pendiente {
-  display: block;
-  margin-top: 8px;
-  font-size: 0.9em;
-  line-height: 1.2;
+/* ================= RESET & BASE ================= */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body {
+  font-family: "Segoe UI", Arial, sans-serif;
+  padding: 15px;
+  background-color: #f5f7fa;
+  color: #222;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-.badge-pendiente strong {
-  color: #fbc02d;
-}
+/* ================= HEADER / NAV ================= */
+header { text-align: center; margin-bottom: 20px; }
+h1 { font-size: 1.8rem; color: #1976d2; margin-bottom: 10px; }
 
-/* Resumen clickeable */
-.lista-item.resumen {
+nav {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+}
+nav button {
+  padding: 10px 14px;
+  border: none;
+  background-color: #1976d2;
+  color: #fff;
+  border-radius: 8px;
+  font-weight: 700;
   cursor: pointer;
+  transition: background-color .18s ease, transform .12s ease;
+}
+nav button:hover,
+nav button:focus {
+  background-color: #1565c0;
+  transform: translateY(-2px);
+  outline: none;
+  box-shadow: 0 6px 18px rgba(21,101,192,0.12);
 }
 
-/* Detalle oculto y visible */
-.detalle-lista.oculto {
-  max-height: 0;
-  opacity: 0;
-  overflow: hidden;
-  transition: max-height 0.4s ease, opacity 0.4s ease;
+/* badge pequeño (notificaciones) */
+.badge {
+  background: #e53e3e;
+  color: #fff;
+  padding: 2px 7px;
+  border-radius: 999px;
+  margin-left: 8px;
+  font-size: .78rem;
+  vertical-align: middle;
 }
 
-.detalle-lista:not(.oculto) {
-  max-height: 500px; /* o un valor grande suficiente */
-  opacity: 1;
-  transition: max-height 0.4s ease, opacity 0.4s ease;
+/* ================= LAYOUT SECCIONES ================= */
+main { margin-top: 10px; }
+.seccion { margin-top: 20px; transition: opacity .25s ease; }
+.oculto { display: none !important; opacity: 0; }
+
+/* títulos */
+h2 { margin-bottom: 12px; font-size: 1.25rem; color: #333; }
+
+/* ================= FORM / CONTROLES ================= */
+/* hacer inputs y botones fluidos pero agradables */
+input, textarea, select, button {
+  display: block;
+  width: 100%;
+  padding: 10px;
+  margin-top: 10px;
+  border-radius: 8px;
+  border: 1px solid #d1d5db;
+  font-size: 1rem;
+  transition: border-color .18s ease, box-shadow .18s ease;
+  background: #fff;
+}
+button[type="button"], button[type="submit"] {
+  width: auto;
+  display: inline-block;
+}
+input:focus, textarea:focus, select:focus {
+  border-color: #1976d2;
+  box-shadow: 0 6px 18px rgba(25,118,210,0.12);
+  outline: none;
+}
+input::placeholder { color: #9aa4b2; }
+
+/* sr-only accesible */
+.sr-only { position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+
+/* ================= PRODUCTOS ================= */
+.producto {
+  background: #fff;
+  padding: 14px;
+  margin-bottom: 12px;
+  border: 1px solid #e6e9ef;
+  border-radius: 10px;
+  box-shadow: 0 1px 3px rgba(15,23,42,0.04);
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  position: relative;
+}
+.producto:hover { box-shadow: 0 6px 18px rgba(25,118,210,0.06); }
+
+.producto > .inputs-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  position: relative; /* para posicionar sugerencias */
 }
 
+.producto input.producto-nombre,
+.producto input.producto-precio,
+.producto input.producto-desc {
+  width: 100%;
+  padding-right: 12px;
+}
+
+/* eliminar producto (botón pequeño) */
+.eliminar-producto {
+  width: 36px;
+  height: 36px;
+  background: transparent;
+  border: none;
+  color: #e53935;
+  font-size: 20px;
+  cursor: pointer;
+  align-self: flex-start;
+  padding: 0;
+  line-height: 36px;
+}
+.eliminar-producto:hover { color: #b71c1c; }
+
+/* ================= SUGERENCIAS ================= */
+.sugerencias {
+  background: #fff;
+  border: 1px solid #d1d5db;
+  max-height: 220px;
+  overflow-y: auto;
+  display: none;
+  position: absolute;
+  width: 100%;
+  z-index: 1000;
+  box-shadow: 0 8px 28px rgba(2,6,23,0.06);
+  border-radius: 8px;
+  font-size: .95rem;
+  top: calc(100% + 6px);
+  left: 0;
+}
+.sugerencia-item { padding: 10px 12px; border-bottom: 1px solid #f1f5f9; cursor: pointer; }
+.sugerencia-item:last-child { border-bottom: none; }
+.sugerencia-item:hover { background: #f8fafc; }
+
+/* animación pequeña */
+@keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+.animate { animation: fadeIn .18s ease both; }
+
+/* ================= LISTAS / RESULTADOS ================= */
+.lista-item {
+  border: 1px solid #e6e9ef;
+  border-radius: 12px;
+  padding: 14px;
+  background: #fff;
+  box-shadow: 0 2px 6px rgba(2,6,23,0.04);
+  margin-bottom: 10px;
+}
+.lista-item.resumen { cursor: pointer; }
+
+.detalle-lista {
+  margin-top: 10px;
+  padding: 12px 14px;
+  background: #fbfbfc;
+  border-left: 4px solid #9ca3af;
+  border-radius: 8px;
+  font-size: .95rem;
+  transition: max-height .28s ease, opacity .28s ease;
+}
+.detalle-lista.oculto { max-height: 0; opacity: 0; overflow: hidden; padding: 0 14px; }
+.detalle-lista:not(.oculto) { max-height: 800px; opacity: 1; }
+
+.productos { background: #f8fafc; border-radius: 8px; padding: 12px; margin-top: 12px; white-space: pre-wrap; }
+
+/* badge-pendiente estilizada */
 .badge-pendiente {
   display: inline-block;
   margin-top: 8px;
   padding: 4px 8px;
-  font-size: 0.9em;
+  font-size: .9rem;
   line-height: 1.2;
-  border: 1px solid #fbc02d;    /* contorno amarillo */
-  border-radius: 4px;
-  background-color: rgba(251, 192, 45, 0.1);  /* fondo muy suave */
-  color: #fbc02d;
+  border: 1px solid #fbc02d;
+  border-radius: 6px;
+  background-color: rgba(251,192,45,0.08);
+  color: #f59e0b;
 }
 
-.lista-item {
-  border: 1px solid #ccc;
-  border-radius: 12px;
-  padding: 16px;
-  background-color: #fff;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.1);
-  cursor: pointer;
+/* ================= NOTIFICACIONES ================= */
+.notificacion-item {
+  list-style: none;
+  margin-bottom: 12px;
 }
-
-.productos {
-  background-color: #f9f9f9;
+.lista-resumen {
+  padding: 10px;
   border-radius: 8px;
-  padding: 12px;
-  margin-top: 12px;
-  white-space: pre-wrap;
+  background: #fff;
+  border: 1px solid transparent;
+}
+.texto-estado { font-size: .92rem; color: #444; margin-top: 6px; }
+
+/* acciones dentro de cada notificación */
+.acciones-panel { display: flex; gap: 8px; margin-top: 8px; }
+.acciones-panel button { padding: 8px 10px; border-radius: 8px; font-weight: 700; cursor: pointer; }
+
+/* botón pequeño primario / secundario */
+.acciones-panel .accion-marcar { background: #10b981; color: #fff; border: none; }
+.acciones-panel .accion-descartar { background: #e2e8f0; color: #1f2937; border: none; }
+
+.badge-mensual {
+  display:inline-block;
+  background:#3b82f6; color:#fff; padding:2px 6px; border-radius:6px; font-size:.8rem; margin-left:8px;
+}
+
+/* contador de resultados (colores de estado) */
+#contadorResultados { margin-top:.5rem; font-weight:700; transition: color .18s ease; }
+#contadorResultados.cero { color: #e53935; }
+#contadorResultados.pocos { color: #f59e0b; }
+#contadorResultados.muchos { color: #388e3c; }
+
+/* ================= MENSAJE FLOTANTE ================= */
+.mensaje {
+  margin-top: 15px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background-color: #d4edda;
+  color: #155724;
+  border: 1px solid #c3e6cb;
+  max-width: 600px;
+  font-weight: 700;
+  box-shadow: 0 6px 18px rgba(2,6,23,0.06);
+  transition: opacity .28s ease;
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 1100;
+}
+.mensaje.oculto { opacity: 0; pointer-events: none; visibility: hidden; }
+
+/* ================= RESPONSIVE ================= */
+@media (max-width: 600px) {
+  nav { flex-direction: column; gap: 8px; }
+  h1 { font-size: 1.5rem; }
+  .mensaje { font-size: .95rem; max-width: 90%; bottom: 10px; right: 5%; }
+  body { padding: 12px; }
+}
+
+@media (min-width: 768px) {
+  body {
+    display: flex;
+    flex-direction: row;
+    align-items: flex-start;
+  }
+  nav {
+    width: 240px;
+    flex-direction: column;
+    align-items: flex-start;
+    height: 100vh;
+    position: sticky;
+    top: 0;
+    padding: 20px 15px;
+    background-color: #ffffff;
+    border-right: 1px solid #eceff1;
+    gap: 12px;
+  }
+  nav button { width: 100%; font-size: 1rem; }
+  main, .seccion { flex: 1; padding: 20px; margin-left: 10px; max-width: 1000px; }
+  .mensaje { top: 20px; right: 20px; max-width: 320px; }
 }
