@@ -33,14 +33,6 @@ const app = initializeApp(firebaseConfig);
 const analytics = getAnalytics(app);
 const db = getFirestore(app);
 
-enableIndexedDbPersistence(db).catch((err) => {
-  if (err.code == "failed-precondition") {
-    console.warn("No se puede habilitar persistencia porque hay múltiples pestañas abiertas.");
-  } else if (err.code == "unimplemented") {
-    console.warn("El navegador no soporta persistencia offline.");
-  }
-});
-
 /* ================= CONFIG ================= */
 const NOTIFY_OFFSETS_DAYS = [30, 15, 10, 5, 4, 3, 2, 1];
 const MAX_NOTIFY_WINDOW_DAYS = 30;
@@ -1121,71 +1113,126 @@ window.addEventListener("online", async () => {
 
 window.addEventListener("offline", () => mostrarMensaje("Sin conexión. Las acciones quedarán guardadas localmente y se sincronizarán al reconectar.", "offline"));
 
-/* ======= INICIALIZACIÓN: onSnapshot listener para mantener cache en tiempo real (y carga inicial desde IndexedDB) ======= */
-function startListasListener() {
-  const colRef = collection(db, "listas");
-  onSnapshot(colRef, async (snapshot) => {
-    snapshot.docChanges().forEach(change => {
-      const id = change.doc.id;
-      const data = { id, ...change.doc.data() };
-      if (change.type === "removed") {
-        listasCache.delete(id);
-        cancelScheduledNotificationsForList(id);
-        deleteOneFromIndexedDB(id).catch(()=>{});
-      } else {
-        listasCache.set(id, data);
-        saveOneToIndexedDB(data).catch(()=>{});
+/* ======= INICIALIZAR: onSnapshot listener para mantener cache en tiempo real (y carga inicial desde IndexedDB) ======= */
+let listasListenerUnsubscribe = null;
+
+async function startListasListener() {
+  // si ya hay un listener, desenlazarlo (evita duplicados al recargar)
+  if (typeof listasListenerUnsubscribe === 'function') {
+    try { listasListenerUnsubscribe(); } catch(e){}
+    listasListenerUnsubscribe = null;
+  }
+
+  try {
+    const colRef = collection(db, "listas");
+    // onSnapshot devuelve la función de unsubscribe
+    listasListenerUnsubscribe = onSnapshot(colRef, async (snapshot) => {
+      snapshot.docChanges().forEach(change => {
+        const id = change.doc.id;
+        const data = { id, ...change.doc.data() };
+        if (change.type === "removed") {
+          listasCache.delete(id);
+          cancelScheduledNotificationsForList(id);
+          deleteOneFromIndexedDB(id).catch(()=>{});
+        } else {
+          listasCache.set(id, data);
+          saveOneToIndexedDB(data).catch(()=>{});
+        }
+      });
+      await persistCacheToIndexedDB().catch(()=>{});
+      actualizarNotificaciones(Array.from(listasCache.values()));
+      mostrarListasFirebase(true);
+    }, async (err) => {
+      // Mejor manejo de error: informar, cargar cache y no dejar la app en estado inutilizable
+      console.error("onSnapshot listas error:", err);
+      mostrarMensaje("Error al conectar con Firestore; usando datos en caché.", "offline");
+      try {
+        await loadCacheFromIndexedDB();
+        actualizarNotificaciones(Array.from(listasCache.values()));
+        mostrarListasFirebase(true);
+      } catch(e) {
+        console.error("Carga cache tras onSnapshot error fallida:", e);
       }
+      // Desuscribir listener para evitar loops extra (si existe)
+      try { if (typeof listasListenerUnsubscribe === 'function') listasListenerUnsubscribe(); } catch(e){}
+      listasListenerUnsubscribe = null;
     });
-    await persistCacheToIndexedDB();
+  } catch(e) {
+    console.error("startListasListener fallo:", e);
+    mostrarMensaje("No se pudo iniciar la sincronización en tiempo real. Se usarán datos locales.", "offline");
+    try { await loadCacheFromIndexedDB(); } catch(err){ console.error(err); }
     actualizarNotificaciones(Array.from(listasCache.values()));
     mostrarListasFirebase(true);
-  }, async (err) => {
-    console.error("onSnapshot listas error:", err);
-    await loadCacheFromIndexedDB();
-    actualizarNotificaciones(Array.from(listasCache.values()));
-    mostrarListasFirebase(true);
-  });
+  }
 }
 
 /* ======= INICIALIZAR ONLOAD ======= */
 document.addEventListener("DOMContentLoaded", async () => {
-  await loadCacheFromIndexedDB().catch(()=>{ /* ignore */ });
-  mostrarSeccion("agregar");
-  startListasListener();
-  mostrarListasFirebase(true);
-
-  const mostrarResultadosConsultaDebounced = debounce(mostrarResultadosConsulta, 300);
-  document.getElementById("filtroTienda")?.addEventListener("input", mostrarResultadosConsultaDebounced);
-  document.getElementById("filtroProducto")?.addEventListener("input", mostrarResultadosConsultaDebounced);
-  document.getElementById("ordenarPor")?.addEventListener("change", mostrarResultadosConsultaDebounced);
-  document.getElementById("btnPendientes")?.addEventListener("click", () => mostrarListasFirebase(true, true));
-  document.getElementById("btnTodas")?.addEventListener("click", () => mostrarListasFirebase(true, false));
-
-  rebuildScheduledTimeoutsFromStorage();
-  actualizarNotificaciones();
-
-  // Cerrar sugerencias si se hace click fuera
-  document.addEventListener('click', (e) => {
-    if (e.target.closest('.sugerencias') || e.target.closest('.sugerencia-item') || e.target.closest('.producto-nombre')) {
-      return;
+  try {
+    // 1) Intentar habilitar persistencia y avisar si falla (await importante)
+    try {
+      await enableIndexedDbPersistence(db);
+      console.log("Persistencia IndexedDB habilitada.");
+    } catch(err) {
+      if (err && err.code === "failed-precondition") {
+        console.warn("No se puede habilitar persistencia (multiple tabs?).", err);
+        mostrarMensaje("Persistencia offline no disponible (varias pestañas). Se usará almacenamiento local.", "offline");
+      } else if (err && err.code === "unimplemented") {
+        console.warn("IndexedDB persistence no implementada en este navegador.", err);
+        mostrarMensaje("Tu navegador no soporta persistencia offline completa.", "offline");
+      } else {
+        console.warn("enableIndexedDbPersistence error:", err);
+        mostrarMensaje("No se pudo habilitar persistencia. Se usará almacenamiento local.", "offline");
+      }
     }
-    document.querySelectorAll('.sugerencias').forEach(s => {
-      s.style.display = 'none';
-      s.innerHTML = '';
-      s.setAttribute('aria-hidden','true');
-    });
-  });
-  // Escape para cerrar sugerencias
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') {
+
+    // 2) Cargar cache desde IndexedDB (si la hay) *antes* de renderizar
+    await loadCacheFromIndexedDB().catch((e)=>{ console.warn("loadCacheFromIndexedDB falló:", e); });
+
+    // 3) Renderizar UI con cache (evita pantalla en blanco / "sin señal")
+    mostrarSeccion("agregar");
+    mostrarListasFirebase(true);
+
+    // 4) Arrancar el listener onSnapshot (si falla, tenemos ya la cache visible)
+    startListasListener();
+
+    // 5) Handlers y reconstrucción de timers
+    const mostrarResultadosConsultaDebounced = debounce(mostrarResultadosConsulta, 300);
+    document.getElementById("filtroTienda")?.addEventListener("input", mostrarResultadosConsultaDebounced);
+    document.getElementById("filtroProducto")?.addEventListener("input", mostrarResultadosConsultaDebounced);
+    document.getElementById("ordenarPor")?.addEventListener("change", mostrarResultadosConsultaDebounced);
+    document.getElementById("btnPendientes")?.addEventListener("click", () => mostrarListasFirebase(true, true));
+    document.getElementById("btnTodas")?.addEventListener("click", () => mostrarListasFirebase(true, false));
+
+    rebuildScheduledTimeoutsFromStorage();
+    actualizarNotificaciones();
+
+    // Cerrar sugerencias si se hace click fuera
+    document.addEventListener('click', (e) => {
+      if (e.target.closest('.sugerencias') || e.target.closest('.sugerencia-item') || e.target.closest('.producto-nombre')) {
+        return;
+      }
       document.querySelectorAll('.sugerencias').forEach(s => {
         s.style.display = 'none';
         s.innerHTML = '';
         s.setAttribute('aria-hidden','true');
       });
-    }
-  });
+    });
+    // Escape para cerrar sugerencias
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        document.querySelectorAll('.sugerencias').forEach(s => {
+          s.style.display = 'none';
+          s.innerHTML = '';
+          s.setAttribute('aria-hidden','true');
+        });
+      }
+    });
+
+  } catch(e){
+    console.error("Error inicializando la app:", e);
+    mostrarMensaje("Error inicializando la aplicación. Revisa la consola para más detalles.", "error");
+  }
 });
 
 /* ======= UTILIDADES UI y exportar funciones globales ======= */
