@@ -1,11 +1,12 @@
-// script.js (versión actualizada: pago mensual, reactivar notifs checkbox, cerrar sugerencias click fuera)
+// script.js (con mensajes tipo y mapeo robusto de tmp_ usando clientId)
+// Reemplaza tu archivo actual por este.
+
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-app.js";
 import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-analytics.js";
 import {
   getFirestore,
   collection,
   addDoc,
-  getDocs,
   query,
   orderBy,
   limit,
@@ -13,6 +14,9 @@ import {
   doc,
   updateDoc,
   serverTimestamp,
+  getDoc,
+  onSnapshot,
+  enableIndexedDbPersistence
 } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
 
 const firebaseConfig = {
@@ -29,7 +33,6 @@ const app = initializeApp(firebaseConfig);
 const analytics = getAnalytics(app);
 const db = getFirestore(app);
 
-import { enableIndexedDbPersistence } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
 enableIndexedDbPersistence(db).catch((err) => {
   if (err.code == "failed-precondition") {
     console.warn("No se puede habilitar persistencia porque hay múltiples pestañas abiertas.");
@@ -43,6 +46,11 @@ const NOTIFY_OFFSETS_DAYS = [30, 15, 10, 5, 4, 3, 2, 1];
 const MAX_NOTIFY_WINDOW_DAYS = 30;
 const NOTIFY_HOUR = 9;
 const STORAGE_KEY_SCHEDULE = "scheduledNotifications_v1";
+
+const IDB_DB_NAME = "listas_cache_db";
+const IDB_STORE = "listas";
+const IDB_VERSION = 1;
+const LISTAS_CACHE_KEY_LEGACY = "listasCache_v2"; // fallback localStorage key
 
 /* ======= UTILIDADES FECHA ======= */
 function parseFechaFromString(fechaStr) {
@@ -73,7 +81,125 @@ function addMonthsKeepDay(date, months){
   return new Date(targetYear, monthIndex, newDay);
 }
 
-/* ======= STORAGE SCHEDULE ======= */
+/* ======= CACHE EN MEMORIA + PERSISTENCIA EN INDEXEDDB (con fallback a localStorage) ======= */
+const listasCache = new Map();
+
+function openIndexedDB() {
+  return new Promise((resolve, reject) => {
+    if (!("indexedDB" in window)) return reject(new Error("No IndexedDB"));
+    const req = indexedDB.open(IDB_DB_NAME, IDB_VERSION);
+    req.onupgradeneeded = (e) => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains(IDB_STORE)) {
+        db.createObjectStore(IDB_STORE, { keyPath: "id" });
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error || new Error("IndexedDB open error"));
+  });
+}
+
+function saveAllToIndexedDB(arr) {
+  return openIndexedDB().then(db => new Promise((res, rej) => {
+    const tx = db.transaction(IDB_STORE, "readwrite");
+    const store = tx.objectStore(IDB_STORE);
+    const clearReq = store.clear();
+    clearReq.onsuccess = () => {
+      try {
+        arr.forEach(it => store.put(it));
+      } catch(e){}
+    };
+    tx.oncomplete = () => { db.close(); res(); };
+    tx.onerror = (e) => { db.close(); rej(e); };
+  })).catch(() => {
+    try { localStorage.setItem(LISTAS_CACHE_KEY_LEGACY, JSON.stringify(arr)); } catch(e){}
+  });
+}
+
+function loadAllFromIndexedDB() {
+  return openIndexedDB().then(db => new Promise((res, rej) => {
+    const tx = db.transaction(IDB_STORE, "readonly");
+    const store = tx.objectStore(IDB_STORE);
+    const req = store.getAll();
+    req.onsuccess = () => { db.close(); res(req.result || []); };
+    req.onerror = (e) => { db.close(); rej(e); };
+  })).catch(() => {
+    try {
+      const raw = localStorage.getItem(LISTAS_CACHE_KEY_LEGACY);
+      return JSON.parse(raw || "[]");
+    } catch(e){ return []; }
+  });
+}
+
+function saveOneToIndexedDB(item) {
+  return openIndexedDB().then(db => new Promise((res, rej) => {
+    const tx = db.transaction(IDB_STORE, "readwrite");
+    const store = tx.objectStore(IDB_STORE);
+    const req = store.put(item);
+    req.onsuccess = () => { db.close(); res(); };
+    req.onerror = (e) => { db.close(); rej(e); };
+  })).catch(() => {
+    try {
+      const raw = localStorage.getItem(LISTAS_CACHE_KEY_LEGACY);
+      const arr = raw ? JSON.parse(raw) : [];
+      const idx = arr.findIndex(x => x.id === item.id);
+      if (idx >= 0) arr[idx] = item; else arr.push(item);
+      localStorage.setItem(LISTAS_CACHE_KEY_LEGACY, JSON.stringify(arr));
+    } catch(e){}
+  });
+}
+
+function deleteOneFromIndexedDB(id) {
+  return openIndexedDB().then(db => new Promise((res, rej) => {
+    const tx = db.transaction(IDB_STORE, "readwrite");
+    const store = tx.objectStore(IDB_STORE);
+    const req = store.delete(id);
+    req.onsuccess = () => { db.close(); res(); };
+    req.onerror = (e) => { db.close(); rej(e); };
+  })).catch(() => {
+    try {
+      const raw = localStorage.getItem(LISTAS_CACHE_KEY_LEGACY);
+      const arr = raw ? JSON.parse(raw) : [];
+      const filtered = arr.filter(x => x.id !== id);
+      localStorage.setItem(LISTAS_CACHE_KEY_LEGACY, JSON.stringify(filtered));
+    } catch(e){}
+  });
+}
+
+async function persistCacheToIndexedDB() {
+  const arr = Array.from(listasCache.values());
+  await saveAllToIndexedDB(arr);
+}
+async function loadCacheFromIndexedDB() {
+  const arr = await loadAllFromIndexedDB();
+  listasCache.clear();
+  (arr || []).forEach(l => { if (l && l.id) listasCache.set(l.id, l); });
+}
+
+/* ======= UTIL: generar clientId (uuid) ======= */
+function generateClientId() {
+  try {
+    if (crypto && crypto.randomUUID) return crypto.randomUUID();
+  } catch(e){}
+  // fallback
+  return `cid_${Date.now()}_${Math.floor(Math.random()*1e6)}`;
+}
+
+/* ======= COLAS LOCALES PARA ACCIONES OFFLINE ======= */
+const PEND_CREATE_KEY = "listasPendientesCreates_v1";
+const PEND_UPD_KEY = "listasPendientesUpdates_v1";
+const PEND_DEL_KEY = "listasPendientesDeletes_v1";
+
+function loadPendingCreates(){ try { return JSON.parse(localStorage.getItem(PEND_CREATE_KEY) || "[]"); } catch(e){ return []; } }
+function savePendingCreates(arr){ try { localStorage.setItem(PEND_CREATE_KEY, JSON.stringify(arr)); } catch(e){} }
+
+function loadPendingUpdates(){ try { return JSON.parse(localStorage.getItem(PEND_UPD_KEY) || "{}"); } catch(e){ return {}; } }
+function savePendingUpdates(obj){ try { localStorage.setItem(PEND_UPD_KEY, JSON.stringify(obj)); } catch(e){} }
+
+function loadPendingDeletes(){ try { return JSON.parse(localStorage.getItem(PEND_DEL_KEY) || "[]"); } catch(e){ return []; } }
+function savePendingDeletes(arr){ try { localStorage.setItem(PEND_DEL_KEY, JSON.stringify(arr)); } catch(e){} }
+
+/* ======= SCHEDULED TIMEOUTS (persistencia simple) ======= */
 const scheduledTimeouts = new Map();
 function loadScheduledMap() { try { const raw = localStorage.getItem(STORAGE_KEY_SCHEDULE); return raw ? JSON.parse(raw) : {}; } catch(e){ return {}; } }
 function saveScheduledMap(map) { try { localStorage.setItem(STORAGE_KEY_SCHEDULE, JSON.stringify(map)); } catch(e){} }
@@ -102,7 +228,142 @@ function sendBrowserNotification(title, body, data = {}) {
   } catch(e){ console.error("Error notificación:", e); }
 }
 
-/* ======= PENDIENTE POR FECHA ======= */
+/* ======= UTILIDADES UI: mostrarMensaje con tipos ======= */
+function mostrarMensaje(texto, tipo = "info") {
+  // tipos: success, offline, error, info
+  const mensajeDiv = document.getElementById("mensaje");
+  const iconos = { success: "✅", offline: "⚠️", error: "❌", info: "ℹ️" };
+  const clases = { success: "msg-success", offline: "msg-offline", error: "msg-error", info: "msg-info" };
+  if (!mensajeDiv) {
+    // si no existe en DOM, console.log con prefijo
+    console.log(`${iconos[tipo] || ""} ${texto}`);
+    return;
+  }
+  // Reset clases
+  mensajeDiv.classList.remove("msg-success","msg-offline","msg-error","msg-info");
+  mensajeDiv.classList.add(clases[tipo] || "msg-info");
+  mensajeDiv.textContent = `${iconos[tipo] || ""} ${texto}`;
+  mensajeDiv.classList.remove("oculto");
+  // tiempo de mostrado según tipo
+  const timeout = tipo === "offline" ? 6000 : tipo === "error" ? 5000 : 3500;
+  setTimeout(()=> mensajeDiv.classList.add("oculto"), timeout);
+}
+
+/* ======= UTILS UI restantes ======= */
+function escapeHtml(str) {
+  if (!str) return "";
+  return String(str).replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s]));
+}
+function formatearFecha(fechaStr) {
+  if (!fechaStr) return "";
+  if (fechaStr.toDate) return fechaStr.toDate().toLocaleDateString("es-MX", {year:"numeric",month:"short",day:"numeric"});
+  if (typeof fechaStr === "string") {
+    const [y,m,d] = fechaStr.split("-").map(Number); const fecha = new Date(y,m-1,d);
+    return fecha.toLocaleDateString("es-MX", {year:"numeric",month:"short",day:"numeric"});
+  }
+  if (fechaStr instanceof Date) return fechaStr.toLocaleDateString("es-MX", {year:"numeric",month:"short",day:"numeric"});
+  return "";
+}
+function normalizarTexto(texto) { return (texto||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""); }
+
+/* ======= DEBOUNCE ======= */
+function debounce(fn, wait = 300) {
+  let t;
+  return function(...args) {
+    clearTimeout(t);
+    t = setTimeout(() => fn.apply(this, args), wait);
+  };
+}
+
+/* ======= SCHEDULER: programar notificaciones ======= */
+// Nota: setTimeout solo funciona mientras la pestaña esté abierta.
+async function scheduleNotificationsForList(lista) {
+  if (!lista || !lista.id || !lista.fecha) return;
+  const fParsed = parseFechaFromString(lista.fecha);
+  if (lista.pagoMensual && fParsed && startOfDay(fParsed).getTime() < startOfDay(new Date()).getTime()) {
+    if (navigator.onLine) { await advanceMonthlyList(lista); return; }
+    else { cancelScheduledNotificationsForList(lista.id); return; }
+  }
+
+  if (lista.completada) { cancelScheduledNotificationsForList(lista.id); return; }
+  if (lista._notificacionDescartada) { cancelScheduledNotificationsForList(lista.id); return; } // Respeta flag
+  if (!esPendientePorFechaOnly(lista)) { cancelScheduledNotificationsForList(lista.id); return; }
+
+  await ensureNotificationPermission();
+  const map = loadScheduledMap();
+  map[lista.id] = map[lista.id] || [];
+  const existingTimestamps = new Set(map[lista.id]);
+  const f = parseFechaFromString(lista.fecha);
+  if (!f || isNaN(f)) return;
+  const now = Date.now();
+  const timersForList = scheduledTimeouts.get(lista.id) || [];
+
+  NOTIFY_OFFSETS_DAYS.forEach(offset => {
+    const notifyDay = addDays(f, -offset);
+    const notifyAt = dateAtHour(notifyDay).getTime();
+    if (notifyAt <= now) return;
+    if (existingTimestamps.has(notifyAt)) return;
+    const delay = notifyAt - now;
+    const timeoutId = setTimeout(async () => {
+      try {
+        let listaActual = listasCache.get(lista.id) || lista;
+        if (navigator.onLine) {
+          try {
+            const d = await getDoc(doc(db, "listas", lista.id));
+            if (d.exists()) listaActual = { id: d.id, ...d.data() };
+          } catch(e){ /* fallback a cache */ }
+        }
+        if (!listaActual) return;
+        if (!esPendientePorFechaOnly(listaActual)) { cancelScheduledNotificationsForList(lista.id); actualizarNotificaciones(); return; }
+        const dias = offset;
+        const title = `Lista: ${listaActual.lugar || "Sin lugar"} vence en ${dias} día(s)`;
+        const body = `Fecha: ${formatearFecha(listaActual.fecha)} — Abre la app para ver o marcar como hecha.`;
+        if (Notification.permission === "granted") sendBrowserNotification(title, body, { listaId: listaActual.id });
+        actualizarNotificaciones();
+      } catch(e){ console.error("Error timeout notificación:", e); }
+    }, delay);
+    timersForList.push(timeoutId);
+    map[lista.id].push(notifyAt);
+  });
+
+  scheduledTimeouts.set(lista.id, timersForList);
+  saveScheduledMap(map);
+}
+
+function rebuildScheduledTimeoutsFromStorage() {
+  const map = loadScheduledMap();
+  const now = Date.now();
+  Object.entries(map).forEach(([listaId, timestamps]) => {
+    timestamps = Array.isArray(timestamps) ? timestamps : [];
+    const futureTs = timestamps.filter(ts => ts > now);
+    if (futureTs.length === 0) { delete map[listaId]; saveScheduledMap(map); return; }
+    const timersForList = scheduledTimeouts.get(listaId) || [];
+    futureTs.forEach(ts => {
+      const delay = ts - now;
+      const timeoutId = setTimeout(async () => {
+        try {
+          let listaActual = listasCache.get(listaId) || null;
+          if (navigator.onLine) {
+            try {
+              const d = await getDoc(doc(db, "listas", listaId));
+              if (d.exists()) listaActual = { id: d.id, ...d.data() };
+            } catch(e){ /* ignore */ }
+          }
+          if (listaActual && esPendientePorFechaOnly(listaActual) && Notification.permission === "granted") {
+            const title = `Lista: ${listaActual.lugar || "Sin lugar"} vence pronto`;
+            const body = `Fecha: ${formatearFecha(listaActual.fecha)} — Abre la app para ver o marcar como hecha.`;
+            sendBrowserNotification(title, body, { listaId: listaActual.id });
+          }
+        } catch(e){ console.error("Error rebuild scheduled:", e); } finally { actualizarNotificaciones(); }
+      }, delay);
+      timersForList.push(timeoutId);
+    });
+    scheduledTimeouts.set(listaId, timersForList);
+    saveScheduledMap(map);
+  });
+}
+
+/* ======= LÓGICA: Determinar si es pendiente por fecha ======= */
 function esPendientePorFechaOnly(lista) {
   if (!lista || !lista.fecha) return false;
   if (lista.completada) return false;
@@ -116,13 +377,11 @@ function esPendientePorFechaOnly(lista) {
   return listaDay.getTime() <= limite.getTime();
 }
 
-/* ======= MONTHLY HELPERS ======= */
+/* ======= MONTHLY HELPERS (usar cache) ======= */
 async function advanceMonthlyIfPastForAll() {
   if (!navigator.onLine) return;
   try {
-    const snap = await getDocs(collection(db, 'listas'));
-    for (const d of snap.docs) {
-      const lista = { id: d.id, ...d.data() };
+    for (const lista of Array.from(listasCache.values())) {
       if (lista.pagoMensual) {
         let f = parseFechaFromString(lista.fecha);
         const hoy = startOfDay(new Date());
@@ -151,94 +410,20 @@ async function advanceMonthlyList(lista) {
     const nuevaStr = formatDateToInput(nueva);
     await updateDoc(doc(db, 'listas', lista.id), { fecha: nuevaStr, _notificacionDescartada: false, estado: 'pendiente', completada: false });
     cancelScheduledNotificationsForList(lista.id);
-    const snap = await getDocs(collection(db, 'listas'));
-    const docu = snap.docs.find(d => d.id === lista.id);
-    if (docu) await scheduleNotificationsForList({ id: docu.id, ...docu.data() });
-    mostrarMensaje(`🔁 Pago mensual actualizado a ${formatearFecha(nuevaStr)}`);
+    if (navigator.onLine) {
+      const d = await getDoc(doc(db, "listas", lista.id));
+      if (d.exists()) {
+        const listaObj = { id: d.id, ...d.data() };
+        listasCache.set(listaObj.id, listaObj);
+        await persistCacheToIndexedDB();
+        await scheduleNotificationsForList(listaObj);
+      }
+    }
+    mostrarMensaje(`🔁 Pago mensual actualizado a ${formatearFecha(nuevaStr)}`, "success");
   } catch(e){ console.error('advanceMonthlyList error:', e); }
 }
 
-/* ======= SCHEDULER: programar notificaciones ======= */
-async function scheduleNotificationsForList(lista) {
-  if (!lista || !lista.id || !lista.fecha) return;
-  const fParsed = parseFechaFromString(lista.fecha);
-  if (lista.pagoMensual && fParsed && startOfDay(fParsed).getTime() < startOfDay(new Date()).getTime()) {
-    if (navigator.onLine) { await advanceMonthlyList(lista); return; }
-    else { cancelScheduledNotificationsForList(lista.id); return; }
-  }
-
-  if (lista.completada) { cancelScheduledNotificationsForList(lista.id); return; }
-  if (!esPendientePorFechaOnly(lista)) { cancelScheduledNotificationsForList(lista.id); return; }
-  await ensureNotificationPermission();
-  const map = loadScheduledMap();
-  map[lista.id] = map[lista.id] || [];
-  const existingTimestamps = new Set(map[lista.id]);
-  const f = parseFechaFromString(lista.fecha);
-  if (!f || isNaN(f)) return;
-  const now = Date.now();
-  const timersForList = scheduledTimeouts.get(lista.id) || [];
-  NOTIFY_OFFSETS_DAYS.forEach(offset => {
-    const notifyDay = addDays(f, -offset);
-    const notifyAt = dateAtHour(notifyDay).getTime();
-    if (notifyAt <= now) return;
-    if (existingTimestamps.has(notifyAt)) return;
-    const delay = notifyAt - now;
-    const timeoutId = setTimeout(async () => {
-      try {
-        let listaActual = lista;
-        if (navigator.onLine) {
-          const snap = await getDocs(collection(db, "listas"));
-          const docu = snap.docs.find(d => d.id === lista.id);
-          if (docu) listaActual = { id: docu.id, ...docu.data() };
-        }
-        if (!listaActual) return;
-        if (!esPendientePorFechaOnly(listaActual)) { cancelScheduledNotificationsForList(lista.id); actualizarNotificaciones(); return; }
-        const dias = offset;
-        const title = `Lista: ${listaActual.lugar || "Sin lugar"} vence en ${dias} día(s)`;
-        const body = `Fecha: ${formatearFecha(listaActual.fecha)} — Abre la app para ver o marcar como hecha.`;
-        if (Notification.permission === "granted") sendBrowserNotification(title, body, { listaId: listaActual.id });
-        actualizarNotificaciones();
-      } catch(e){ console.error("Error timeout notificación:", e); }
-    }, delay);
-    timersForList.push(timeoutId);
-    map[lista.id].push(notifyAt);
-  });
-  scheduledTimeouts.set(lista.id, timersForList);
-  saveScheduledMap(map);
-}
-function rebuildScheduledTimeoutsFromStorage() {
-  const map = loadScheduledMap();
-  const now = Date.now();
-  Object.entries(map).forEach(([listaId, timestamps]) => {
-    timestamps = Array.isArray(timestamps) ? timestamps : [];
-    const futureTs = timestamps.filter(ts => ts > now);
-    if (futureTs.length === 0) { delete map[listaId]; saveScheduledMap(map); return; }
-    const timersForList = scheduledTimeouts.get(listaId) || [];
-    futureTs.forEach(ts => {
-      const delay = ts - now;
-      const timeoutId = setTimeout(async () => {
-        try {
-          let listaActual = null;
-          if (navigator.onLine) {
-            const snap = await getDocs(collection(db, "listas"));
-            const docu = snap.docs.find(d => d.id === listaId);
-            if (docu) listaActual = { id: docu.id, ...docu.data() };
-          }
-          if (listaActual && esPendientePorFechaOnly(listaActual) && Notification.permission === "granted") {
-            const title = `Lista: ${listaActual.lugar || "Sin lugar"} vence pronto`;
-            const body = `Fecha: ${formatearFecha(listaActual.fecha)} — Abre la app para ver o marcar como hecha.`;
-            sendBrowserNotification(title, body, { listaId: listaActual.id });
-          }
-        } catch(e){ console.error("Error rebuild scheduled:", e); } finally { actualizarNotificaciones(); }
-      }, delay);
-      timersForList.push(timeoutId);
-    });
-    scheduledTimeouts.set(listaId, timersForList);
-    saveScheduledMap(map);
-  });
-}
-
-/* ======= RENDER: Panel Notificaciones (ahora con descripción y coloreado) ======= */
+/* ======= RENDER: Notificaciones y lista (usando cache) ======= */
 function renderBadge(count) {
   const navButtons = document.querySelectorAll("header nav button");
   let bellBtn = null;
@@ -260,58 +445,6 @@ function calcularDiasRestantes(fecha) {
   const f = startOfDay(fecha);
   const diffMs = f.getTime() - hoy.getTime();
   return Math.round(diffMs / (1000*60*60*24));
-}
-
-function escapeHtml(str) {
-  if (!str) return "";
-  return String(str).replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s]));
-}
-
-/* ======= ACTUALIZAR NOTIFICACIONES (marca expiradas y no muestra items pasados) ======= */
-async function actualizarNotificaciones(listasExternas = null) {
-  try {
-    // Si hay listas mensuales con fecha pasada, adelantarlas (si estamos en línea)
-    if (navigator.onLine) await advanceMonthlyIfPastForAll();
-
-    let listas = [];
-    if (Array.isArray(listasExternas)) listas = listasExternas;
-    else {
-      if (navigator.onLine) {
-        const snap = await getDocs(collection(db, "listas"));
-        listas = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        try { localStorage.setItem("listasCache", JSON.stringify(listas)); } catch(e){}
-      } else {
-        const cache = localStorage.getItem("listasCache");
-        listas = cache ? JSON.parse(cache) : [];
-      }
-    }
-
-    // marcar como 'expirada' listas pendientes con fecha pasada (no mensuales)
-    const hoy = startOfDay(new Date());
-    for (const l of listas) {
-      try {
-        const f = parseFechaFromString(l.fecha);
-        if (!l.pagoMensual && l.estado === 'pendiente' && f && startOfDay(f).getTime() < hoy.getTime()) {
-          // cambiar estado localmente para que no aparezca en notifs
-          l.estado = 'expirada';
-          if (navigator.onLine) {
-            try { await updateDoc(doc(db, 'listas', l.id), { estado: 'expirada' }); }
-            catch(err){ console.error("No se pudo marcar expirada en servidor:", err); }
-          } else {
-            try {
-              let cache = JSON.parse(localStorage.getItem("listasCache") || "[]");
-              cache = cache.map(item => item.id === l.id ? ({ ...item, estado: 'expirada' }) : item);
-              localStorage.setItem("listasCache", JSON.stringify(cache));
-            } catch(e){ /* ignore */ }
-          }
-        }
-      } catch(e){ console.error("Error procesando expiradas:", e); }
-    }
-
-    const pendientesPorFecha = listas.filter(l => esPendientePorFechaOnly(l));
-    renderListaNotificaciones(pendientesPorFecha);
-    pendientesPorFecha.forEach(lista => scheduleNotificationsForList(lista));
-  } catch(e) { console.error("Error actualizarNotificaciones:", e); }
 }
 
 function colorForDias(dias) {
@@ -401,110 +534,202 @@ function renderListaNotificaciones(pendientes) {
   });
 }
 
-/* ======= ACCIONES: marcar hecha / descartar ======= */
+/* ======= ACTUALIZAR NOTIFICACIONES (usa cache) ======= */
+async function actualizarNotificaciones(listasExternas = null) {
+  try {
+    if (navigator.onLine) await advanceMonthlyIfPastForAll();
+
+    let listas = [];
+    if (Array.isArray(listasExternas)) listas = listasExternas;
+    else {
+      listas = Array.from(listasCache.values());
+      if (!listas || listas.length === 0) listas = [];
+    }
+
+    // marcar expiradas si aplica
+    const hoy = startOfDay(new Date());
+    for (const l of listas) {
+      try {
+        const f = parseFechaFromString(l.fecha);
+        if (!l.pagoMensual && l.estado === 'pendiente' && f && startOfDay(f).getTime() < hoy.getTime()) {
+          l.estado = 'expirada';
+          if (navigator.onLine) {
+            try { await updateDoc(doc(db, 'listas', l.id), { estado: 'expirada' }); }
+            catch(err){ console.error("No se pudo marcar expirada en servidor:", err); }
+          } else {
+            try {
+              listasCache.set(l.id, { ...l, estado: 'expirada' });
+              await persistCacheToIndexedDB();
+            } catch(e){ /* ignore */ }
+          }
+        }
+      } catch(e){ console.error("Error procesando expiradas:", e); }
+    }
+
+    const pendientesPorFecha = listas.filter(l => esPendientePorFechaOnly(l));
+    renderListaNotificaciones(pendientesPorFecha);
+    pendientesPorFecha.forEach(lista => scheduleNotificationsForList(lista));
+  } catch(e) { console.error("Error actualizarNotificaciones:", e); }
+}
+
+/* ======= ACCIONES: marcar hecha / descartar (usar cache y getDoc fallback) ======= */
 async function marcarListaComoHecha(id) {
   try {
-    let lista = null;
-    if (navigator.onLine) {
-      const snap = await getDocs(collection(db, 'listas'));
-      const docu = snap.docs.find(d => d.id === id);
-      if (docu) lista = { id: docu.id, ...docu.data() };
-    } else {
-      const cache = JSON.parse(localStorage.getItem('listasCache') || '[]');
-      lista = cache.find(l => l.id === id) || null;
+    let lista = listasCache.get(id);
+    if (!lista && navigator.onLine) {
+      const d = await getDoc(doc(db, "listas", id));
+      if (d.exists()) lista = { id: d.id, ...d.data() };
     }
-    if (!lista) return mostrarMensaje('❌ Lista no encontrada');
+    if (!lista) return mostrarMensaje('Lista no encontrada', "error");
 
     if (lista.pagoMensual) {
       if (navigator.onLine) {
         await advanceMonthlyList(lista);
+        mostrarMensaje("Pago mensual avanzado en la nube.", "success");
       } else {
-        guardarCambiosOffline(id, { fecha: formatDateToInput(addMonthsKeepDay(parseFechaFromString(lista.fecha), 1)), _notificacionDescartada: false, estado: 'pendiente', completada: false });
+        const nuevaFecha = formatDateToInput(addMonthsKeepDay(parseFechaFromString(lista.fecha), 1));
+        const updates = loadPendingUpdates();
+        updates[id] = { fecha: nuevaFecha, _notificacionDescartada: false, estado: 'pendiente', completada: false };
+        savePendingUpdates(updates);
+        listasCache.set(id, { ...lista, fecha: nuevaFecha, _notificacionDescartada: false, estado: 'pendiente', completada: false });
+        await persistCacheToIndexedDB();
         cancelScheduledNotificationsForList(id);
-        mostrarMensaje('🔁 Pago mensual marcado offline. Se actualizará cuando vuelva la conexión.');
+        mostrarMensaje("Guardado fuera de línea: pago mensual marcado. Se sincronizará al reconectar.", "offline");
       }
       await actualizarNotificaciones();
       mostrarListasFirebase(true);
       return;
     }
 
-    if (navigator.onLine) await updateDoc(doc(db, "listas", id), { estado: "normal", completada: true });
-    else guardarCambiosOffline(id, { estado: "normal", completada: true });
+    if (navigator.onLine) {
+      await updateDoc(doc(db, "listas", id), { estado: "normal", completada: true });
+      mostrarMensaje("Lista marcada como hecha (en la nube).", "success");
+    } else {
+      const updates = loadPendingUpdates();
+      updates[id] = { ...(updates[id]||{}), estado: "normal", completada: true };
+      savePendingUpdates(updates);
+      listasCache.set(id, { ...lista, estado: "normal", completada: true });
+      await persistCacheToIndexedDB();
+      mostrarMensaje("Guardado fuera de línea: lista marcada como hecha. Se sincronizará al reconectar.", "offline");
+    }
     cancelScheduledNotificationsForList(id);
-    mostrarMensaje("✅ Lista marcada como hecha");
     await actualizarNotificaciones();
     mostrarListasFirebase(true);
-  } catch(e){ mostrarMensaje("❌ Error marcando la lista como hecha"); console.error(e); }
+  } catch(e){ mostrarMensaje("Error marcando la lista como hecha", "error"); console.error(e); }
 }
 async function descartarNotificacion(id) {
   try {
-    if (navigator.onLine) await updateDoc(doc(db, "listas", id), { _notificacionDescartada: true });
-    else {
-      let cache = JSON.parse(localStorage.getItem("listasCache") || "[]");
-      cache = cache.map(l => l.id === id ? ({ ...l, _notificacionDescartada: true }) : l);
-      localStorage.setItem("listasCache", JSON.stringify(cache));
+    if (navigator.onLine) {
+      await updateDoc(doc(db, "listas", id), { _notificacionDescartada: true });
+      mostrarMensaje("Notificación descartada (en la nube).", "success");
+    } else {
+      const updates = loadPendingUpdates();
+      updates[id] = { ...(updates[id]||{}), _notificacionDescartada: true };
+      savePendingUpdates(updates);
+      const cached = listasCache.get(id);
+      if (cached) { cached._notificacionDescartada = true; listasCache.set(id, cached); await persistCacheToIndexedDB(); }
+      mostrarMensaje("Guardado fuera de línea: notificación descartada. Se sincronizará al reconectar.", "offline");
     }
     cancelScheduledNotificationsForList(id);
-    mostrarMensaje("✅ Notificación descartada");
     actualizarNotificaciones();
-  } catch(e){ console.error("Error descartar:", e); mostrarMensaje("❌ Error descartando notificación"); }
+  } catch(e){ console.error("Error descartar:", e); mostrarMensaje("Error descartando notificación", "error"); }
 }
 
-/* ======= CRUD: guardar, editar, eliminar listas ======= */
+/* ======= CRUD: guardar, editar, eliminar listas (usando cache donde tiene sentido) ======= */
 async function guardarLista(nuevaLista) {
   try {
     nuevaLista.createdAt = serverTimestamp();
-    // Asegurar que nuevas listas no estén descartadas por defecto
     if (!('_notificacionDescartada' in nuevaLista)) nuevaLista._notificacionDescartada = false;
-    await addDoc(collection(db, "listas"), nuevaLista);
-    mostrarMensaje("✅ Lista guardada correctamente");
-    actualizarNotificaciones();
-  } catch(e){ mostrarMensaje("❌ Error guardando la lista: " + e.message); }
+
+    if (navigator.onLine) {
+      const ref = await addDoc(collection(db, "listas"), nuevaLista);
+      mostrarMensaje("Lista guardada correctamente (en la nube).", "success");
+      listasCache.set(ref.id, { id: ref.id, ...nuevaLista });
+      await persistCacheToIndexedDB();
+      actualizarNotificaciones();
+    } else {
+      // cola la creación en pendingCreates (será insertada al reconectar) con clientId
+      const clientId = generateClientId();
+      const itemWithClient = { ...nuevaLista, clientId };
+      const creates = loadPendingCreates();
+      creates.push(itemWithClient);
+      savePendingCreates(creates);
+      // id temporal para cache local (tmp_<clientId>)
+      const tempId = `tmp_${clientId}`;
+      listasCache.set(tempId, { id: tempId, ...nuevaLista, clientId });
+      await persistCacheToIndexedDB();
+      mostrarMensaje("Guardado fuera de línea: la lista se creará cuando vuelva la conexión.", "offline");
+      actualizarNotificaciones();
+    }
+  } catch(e){ mostrarMensaje("Error guardando la lista: " + (e.message || e), "error"); console.error(e); }
 }
 
 async function eliminarLista(id) {
   const confirmar = confirm("¿Estás seguro de que deseas eliminar esta lista? Esta acción no se puede deshacer.");
   if (!confirmar) return;
   try {
-    await deleteDoc(doc(db, "listas", id));
-    mostrarMensaje("✅ Lista eliminada con éxito");
-    cancelScheduledNotificationsForList(id);
-    mostrarListasFirebase(true);
-    mostrarResultadosConsulta();
-    actualizarNotificaciones();
-  } catch(e){ mostrarMensaje("❌ Error eliminando lista: " + e.message); }
+    if (navigator.onLine) {
+      await deleteDoc(doc(db, "listas", id));
+      mostrarMensaje("Lista eliminada con éxito (en la nube).", "success");
+      cancelScheduledNotificationsForList(id);
+      listasCache.delete(id);
+      await deleteOneFromIndexedDB(id);
+      mostrarListasFirebase(true);
+      mostrarResultadosConsulta();
+      actualizarNotificaciones();
+    } else {
+      // cola la eliminación
+      const dels = loadPendingDeletes();
+      dels.push(id);
+      savePendingDeletes(dels);
+      // quitar de cache local
+      listasCache.delete(id);
+      await deleteOneFromIndexedDB(id);
+      cancelScheduledNotificationsForList(id);
+      mostrarMensaje("Eliminado fuera de línea: la eliminación se aplicará al reconectar.", "offline");
+      mostrarListasFirebase(true);
+      actualizarNotificaciones();
+    }
+  } catch(e){ mostrarMensaje("Error eliminando lista: " + e.message, "error"); }
 }
 
 async function guardarCambiosLista(idLista, datosLista) {
-  // si el objeto no incluye explicitamente _notificacionDescartada, no lo tocamos
   if (navigator.onLine) {
     try {
       const docRef = doc(db, "listas", idLista);
       await updateDoc(docRef, datosLista);
-      mostrarMensaje("✅ Cambios guardados en la nube.");
+      mostrarMensaje("Cambios guardados en la nube.", "success");
+      listasCache.set(idLista, { id: idLista, ...datosLista });
+      await persistCacheToIndexedDB();
       actualizarNotificaciones();
-    } catch(e){ mostrarMensaje("❌ Error al guardar en Firestore."); guardarCambiosOffline(idLista, datosLista); }
-  } else { mostrarMensaje("⚠️ Sin conexión. Guardando cambios localmente."); guardarCambiosOffline(idLista, datosLista); }
+    } catch(e){ mostrarMensaje("Error al guardar en Firestore.", "error"); guardarCambiosOffline(idLista, datosLista); }
+  } else {
+    mostrarMensaje("Guardado fuera de línea: los cambios se guardarán cuando haya conexión.", "offline");
+    guardarCambiosOffline(idLista, datosLista);
+  }
 }
 function guardarCambiosOffline(idLista, datosLista) {
-  let listasPendientes = JSON.parse(localStorage.getItem("listasPendientes") || "{}");
-  listasPendientes[idLista] = datosLista;
-  localStorage.setItem("listasPendientes", JSON.stringify(listasPendientes));
+  const updates = loadPendingUpdates();
+  updates[idLista] = { ...(updates[idLista] || {}), ...datosLista };
+  savePendingUpdates(updates);
+  const cached = listasCache.get(idLista) || {};
+  listasCache.set(idLista, { ...cached, ...datosLista, id: idLista });
+  persistCacheToIndexedDB().catch(()=>{});
 }
 
-/* ======= INTERFAZ: mostrarListas, consultas, sugerencias, editar ======= */
+/* ======= INTERFAZ: mostrarListas, consultas, sugerencias, editar (usar cache) ======= */
 let listasMostradasCount = 5;
-async function mostrarListasFirebase(resetCount=false, soloPendientes=false) {
+
+function mostrarListasDesdeCache(resetCount=false, soloPendientes=false) {
   if (resetCount) listasMostradasCount = 5;
   const filtroLugar = normalizarTexto(document.getElementById("filtroLugarListas")?.value || "");
   try {
-    const q = query(collection(db, "listas"), orderBy("fecha", "desc"), limit(listasMostradasCount));
-    const snapshot = await getDocs(q);
-    let listas = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-    listas = listas.filter(l => normalizarTexto(l.lugar).includes(filtroLugar));
+    let listas = Array.from(listasCache.values()).sort((a,b) => new Date(b.fecha) - new Date(a.fecha));
+    listas = listas.filter(l => normalizarTexto(l.lugar || "").includes(filtroLugar));
     if (soloPendientes) {
       listas = listas.filter(l => l.estado === "pendiente" || (Array.isArray(l.productos) && l.productos.some(p => p.precio === 0)));
     }
+    listas = listas.slice(0, listasMostradasCount);
     const ul = document.getElementById("todasLasListas");
     if (!ul) return;
     ul.innerHTML = "";
@@ -543,7 +768,10 @@ async function mostrarListasFirebase(resetCount=false, soloPendientes=false) {
     const btnCargar = document.getElementById("btnCargarMas");
     if (btnCargar) btnCargar.style.display = (listas.length === listasMostradasCount) ? "block" : "none";
     actualizarNotificaciones();
-  } catch(e){ mostrarMensaje("❌ Error cargando listas: " + e.message); console.error(e); }
+  } catch(e){ mostrarMensaje("Error cargando listas: " + e.message, "error"); console.error(e); }
+}
+function mostrarListasFirebase(resetCount=false, soloPendientes=false) {
+  mostrarListasDesdeCache(resetCount, soloPendientes);
 }
 function cargarMasListas(){ listasMostradasCount += 5; mostrarListasFirebase(); }
 function alternarDetalle(id){ const detalle = document.getElementById(`detalle-${id}`); if (detalle) detalle.classList.toggle("oculto"); }
@@ -557,11 +785,10 @@ async function mostrarResultadosConsulta() {
   if (!resultados) return;
   resultados.innerHTML = "";
   try {
-    const snapshot = await getDocs(collection(db, "listas"));
+    const listas = Array.from(listasCache.values());
     let totalResultados = 0;
-    const listas = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
     listas.forEach(lista => {
-      const lugarNormalizado = normalizarTexto(lista.lugar);
+      const lugarNormalizado = normalizarTexto(lista.lugar || "");
       const coincideTienda = !filtroTienda || lugarNormalizado.includes(filtroTienda);
       if (!coincideTienda) return;
       let productosFiltrados = (lista.productos || []).filter(p => {
@@ -590,20 +817,18 @@ async function mostrarResultadosConsulta() {
       else if (totalResultados <= 5) contador.classList.add("pocos");
       else contador.classList.add("muchos");
     }
-  } catch(e){ mostrarMensaje("❌ Error al consultar: " + e.message); }
+  } catch(e){ mostrarMensaje("Error al consultar: " + e.message, "error"); }
 }
 
-/* ======= SUGERENCIAS ======= */
-async function mostrarSugerencias(input) {
+/* ======= SUGERENCIAS (debounced + usa cache) ======= */
+function mostrarSugerenciasInner(input) {
   const valor = normalizarTexto(input.value || "");
   const contenedorSugerencias = input.nextElementSibling;
   if (!contenedorSugerencias) return;
   if (valor.length < 2) { contenedorSugerencias.style.display = "none"; contenedorSugerencias.innerHTML = ""; contenedorSugerencias.setAttribute('aria-hidden','true'); return; }
   try {
-    const snapshot = await getDocs(collection(db, "listas"));
     const productosEncontrados = [];
-    snapshot.forEach(docu => {
-      const lista = docu.data();
+    for (const lista of listasCache.values()) {
       const productos = lista.productos || [];
       productos.forEach(p => {
         const nombreNormalizado = normalizarTexto(p.nombre);
@@ -611,7 +836,7 @@ async function mostrarSugerencias(input) {
           productosEncontrados.push({ nombre: p.nombre, precio: p.precio, descripcion: p.descripcion || "", lugar: lista.lugar, fecha: lista.fecha || lista.createdAt || new Date() });
         }
       });
-    });
+    }
     if (productosEncontrados.length === 0) { contenedorSugerencias.style.display = "none"; contenedorSugerencias.innerHTML = ""; contenedorSugerencias.setAttribute('aria-hidden','true'); return; }
     productosEncontrados.sort((a,b)=> new Date(b.fecha) - new Date(a.fecha));
     contenedorSugerencias.style.display = "block";
@@ -627,6 +852,9 @@ async function mostrarSugerencias(input) {
       `).join("") + `<div style="height:6px;"></div>`;
   } catch(e){ console.error("Error sugerencias:", e); contenedorSugerencias.style.display = "none"; contenedorSugerencias.innerHTML = ""; contenedorSugerencias.setAttribute('aria-hidden','true'); }
 }
+const mostrarSugerencias = debounce(mostrarSugerenciasInner, 300);
+window.mostrarSugerencias = mostrarSugerencias;
+
 function seleccionarSugerencia(div, producto) {
   try {
     const contenedorProducto = div.closest('.sugerencias').previousElementSibling.closest('.producto');
@@ -640,20 +868,21 @@ function seleccionarSugerencia(div, producto) {
   } catch(e){ console.error("seleccionarSugerencia error:", e); }
 }
 
-/* ======= EDITAR ======= */
+/* ======= EDITAR (usa cache + getDoc fallback y respeta reactivar) ======= */
 async function editarLista(id) {
   try {
-    const snap = await getDocs(collection(db, "listas"));
-    const listaDoc = snap.docs.find(d => d.id === id);
-    if (!listaDoc) return mostrarMensaje("❌ Lista no encontrada");
-    const lista = listaDoc.data();
-    document.getElementById("lugar").value = lista.lugar;
-    document.getElementById("fecha").value = lista.fecha;
+    let lista = listasCache.get(id);
+    if (!lista && navigator.onLine) {
+      const d = await getDoc(doc(db, "listas", id));
+      if (d.exists()) lista = { id: d.id, ...d.data() };
+    }
+    if (!lista) return mostrarMensaje("Lista no encontrada", "error");
+    document.getElementById("lugar").value = lista.lugar || "";
+    document.getElementById("fecha").value = lista.fecha || "";
     if (document.getElementById("esPagoMensual")) document.getElementById("esPagoMensual").checked = !!lista.pagoMensual;
     document.getElementById("idListaEditando").value = id;
     document.getElementById("tituloFormulario").textContent = "Editar Lista de Compras";
 
-    // Inyectar checkbox de "Reactivar notificaciones" (si no existe)
     const form = document.getElementById('formLista');
     if (form) {
       const existing = document.getElementById('reactivar-notif-container');
@@ -666,7 +895,6 @@ async function editarLista(id) {
           </label>
         </div>
       `;
-      // insert after fecha input (if exists) or at end
       const fechaEl = document.getElementById('fecha');
       if (fechaEl && fechaEl.parentElement) fechaEl.insertAdjacentHTML('afterend', checkboxHTML);
       else form.insertAdjacentHTML('beforeend', checkboxHTML);
@@ -674,7 +902,7 @@ async function editarLista(id) {
 
     const contenedor = document.getElementById("productos");
     contenedor.innerHTML = "";
-    lista.productos.forEach(p => {
+    (lista.productos || []).forEach(p => {
       const div = document.createElement("div");
       div.className = "producto";
       div.innerHTML = `
@@ -690,15 +918,15 @@ async function editarLista(id) {
     });
     mostrarSeccion("agregar");
     window.scrollTo(0,0);
-  } catch(e){ mostrarMensaje("❌ Error al cargar la lista: " + e.message); console.error(e); }
+  } catch(e){ mostrarMensaje("Error al cargar la lista: " + e.message, "error"); console.error(e); }
 }
 
-/* ======= FORM SUBMIT ======= */
+/* ======= FORM SUBMIT (respeta _notificacionDescartada salvo reactivar) ======= */
 document.getElementById("formLista")?.addEventListener("submit", async (e) => {
   e.preventDefault();
   const lugar = document.getElementById("lugar").value.trim();
   const fechaInput = document.getElementById("fecha").value;
-  if (!fechaInput) { mostrarMensaje("❌ Ingresa una fecha"); return; }
+  if (!fechaInput) { mostrarMensaje("Ingresa una fecha", "error"); return; }
   const [year, month, day] = fechaInput.split("-").map(Number);
   const fechaObj = new Date(year, month-1, day);
   const hoy = new Date();
@@ -709,8 +937,8 @@ document.getElementById("formLista")?.addEventListener("submit", async (e) => {
     const nombre = p.querySelector(".producto-nombre").value.trim();
     const precio = parseFloat(p.querySelector(".producto-precio").value);
     const descripcion = p.querySelector(".producto-desc").value.trim();
-    if (!nombre) { mostrarMensaje(`❌ El producto #${i+1} no tiene nombre.`); hayError = true; return; }
-    if (isNaN(precio) || precio < 0) { mostrarMensaje(`❌ El producto "${nombre || "sin nombre"}" tiene un precio inválido.`); hayError = true; return; }
+    if (!nombre) { mostrarMensaje(`El producto #${i+1} no tiene nombre.`, "error"); hayError = true; return; }
+    if (isNaN(precio) || precio < 0) { mostrarMensaje(`El producto "${nombre || "sin nombre"}" tiene un precio inválido.`, "error"); hayError = true; return; }
     productos.push({ nombre, precio, descripcion });
   });
   if (hayError || productos.length === 0) return;
@@ -718,30 +946,47 @@ document.getElementById("formLista")?.addEventListener("submit", async (e) => {
   const esPagoMensual = !!document.getElementById("esPagoMensual") && document.getElementById("esPagoMensual").checked;
   const datos = { lugar, fecha: fechaInput, productos, estado, pagoMensual: esPagoMensual };
 
-  // si estamos editando: revisar checkbox "reactivarNotifs"
   const reactivarCheckbox = document.getElementById('reactivarNotifs');
 
   if (idLista) {
     try {
-      // Si el usuario pidió reactivar, pedir confirmación y aplicar _notificacionDescartada:false
+      let prev = listasCache.get(idLista);
+      if (!prev && navigator.onLine) {
+        const d = await getDoc(doc(db, "listas", idLista));
+        if (d.exists()) prev = { id: d.id, ...d.data() };
+      }
       if (reactivarCheckbox && reactivarCheckbox.checked) {
         const confirmar = confirm("¿Confirmas que deseas reactivar las notificaciones para esta lista? Si confirmas, la lista volverá a aparecer en notificaciones si aplica.");
         if (confirmar) datos._notificacionDescartada = false;
-        // si no confirma, no tocamos el campo y la lista queda como estaba
+        else if (prev && typeof prev._notificacionDescartada !== "undefined") datos._notificacionDescartada = prev._notificacionDescartada;
+      } else {
+        if (prev && typeof prev._notificacionDescartada !== "undefined") datos._notificacionDescartada = prev._notificacionDescartada;
+        else datos._notificacionDescartada = false;
       }
-      await updateDoc(doc(db, "listas", idLista), datos);
-      mostrarMensaje("✅ Lista actualizada correctamente");
-      const snap = await getDocs(collection(db, "listas"));
-      const listaDoc = snap.docs.find(d => d.id === idLista);
-      if (listaDoc) {
-        const listaObj = { id: listaDoc.id, ...listaDoc.data() };
+
+      if (navigator.onLine) {
+        await updateDoc(doc(db, "listas", idLista), datos);
+        mostrarMensaje("Lista actualizada correctamente (en la nube).", "success");
+        listasCache.set(idLista, { id: idLista, ...datos });
+        await persistCacheToIndexedDB();
         cancelScheduledNotificationsForList(idLista);
-        await scheduleNotificationsForList(listaObj);
+        if (!datos._notificacionDescartada && esPendientePorFechaOnly(datos)) await scheduleNotificationsForList({ id: idLista, ...datos });
+        actualizarNotificaciones();
+      } else {
+        const updates = loadPendingUpdates();
+        updates[idLista] = { ...(updates[idLista]||{}), ...datos };
+        savePendingUpdates(updates);
+        listasCache.set(idLista, { id: idLista, ...datos });
+        await persistCacheToIndexedDB();
+        cancelScheduledNotificationsForList(idLista);
+        if (!datos._notificacionDescartada && esPendientePorFechaOnly(datos)) {
+          await scheduleNotificationsForList({ id: idLista, ...datos });
+        }
+        mostrarMensaje("Guardado fuera de línea: los cambios se sincronizarán cuando haya conexión.", "offline");
+        actualizarNotificaciones();
       }
-      actualizarNotificaciones();
-    } catch(e){ mostrarMensaje("❌ Error actualizando la lista: " + e.message); console.error(e); }
+    } catch(e){ mostrarMensaje("Error actualizando la lista: " + e.message, "error"); console.error(e); }
   } else {
-    // nueva lista: aseguramos que no esté descartada por defecto
     await guardarLista({ ...datos, createdAt: serverTimestamp(), _notificacionDescartada: false });
   }
 
@@ -749,7 +994,6 @@ document.getElementById("formLista")?.addEventListener("submit", async (e) => {
   e.target.reset();
   document.getElementById("idListaEditando").value = "";
   document.getElementById("tituloFormulario").textContent = "Agregar Lista de Compras";
-  // remover contenedor reactivar si existe
   const contReact = document.getElementById('reactivar-notif-container');
   if (contReact) contReact.remove();
 
@@ -765,26 +1009,6 @@ document.getElementById("formLista")?.addEventListener("submit", async (e) => {
     </div>`;
   mostrarListasFirebase(true);
 });
-
-/* ======= OTROS ======= */
-function mostrarMensaje(texto) {
-  const mensajeDiv = document.getElementById("mensaje");
-  if (!mensajeDiv) { console.log("MSG:", texto); return; }
-  mensajeDiv.textContent = texto;
-  mensajeDiv.classList.remove("oculto");
-  setTimeout(()=> mensajeDiv.classList.add("oculto"), 3000);
-}
-function formatearFecha(fechaStr) {
-  if (!fechaStr) return "";
-  if (fechaStr.toDate) return fechaStr.toDate().toLocaleDateString("es-MX", {year:"numeric",month:"short",day:"numeric"});
-  if (typeof fechaStr === "string") {
-    const [y,m,d] = fechaStr.split("-").map(Number); const fecha = new Date(y,m-1,d);
-    return fecha.toLocaleDateString("es-MX", {year:"numeric",month:"short",day:"numeric"});
-  }
-  if (fechaStr instanceof Date) return fechaStr.toLocaleDateString("es-MX", {year:"numeric",month:"short",day:"numeric"});
-  return "";
-}
-function normalizarTexto(texto) { return (texto||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""); }
 
 /* ======= SENCILLOS: agregar/eliminar producto y exposicion global ======= */
 function agregarProducto() {
@@ -805,28 +1029,139 @@ function agregarProducto() {
 }
 function eliminarProducto(boton) { const divProducto = boton.parentElement; if (divProducto) divProducto.remove(); }
 
-/* ======= SYNC ONLINE/OFFLINE ======= */
+/* ======= SYNC ONLINE/OFFLINE: procesar colas pendientes al reconectar (mejor mapeo tmp_ => real id) ======= */
 window.addEventListener("online", async () => {
-  mostrarMensaje("🔗 Conexión restablecida");
-  let listasPendientes = JSON.parse(localStorage.getItem("listasPendientes") || "{}");
-  for (const id in listasPendientes) {
-    try { await updateDoc(doc(db,"listas",id), listasPendientes[id]); mostrarMensaje(`✅ Lista '${id}' sincronizada.`); delete listasPendientes[id]; }
-    catch(e){ mostrarMensaje(`❌ Error al sincronizar lista '${id}'.`); }
-  }
-  localStorage.setItem("listasPendientes", JSON.stringify(listasPendientes));
-  actualizarNotificaciones();
-});
-window.addEventListener("offline", () => mostrarMensaje("⚠️ Sin conexión. Los datos se guardarán localmente y se sincronizarán al reconectarse."));
+  mostrarMensaje("Conexión restablecida. Sincronizando cambios pendientes...", "info");
 
-/* ======= INICIALIZACIÓN ======= */
-document.addEventListener("DOMContentLoaded", () => {
+  // 1) Creaciones pendientes (con clientId) -> subir y mapear tmp_ -> ref.id
+  const pendingCreates = loadPendingCreates();
+  const pendingUpdates = loadPendingUpdates();
+  const pendingDeletes = loadPendingDeletes();
+
+  for (const c of pendingCreates) {
+    try {
+      // asegurarnos que c contiene clientId
+      if (!c.clientId) c.clientId = generateClientId();
+      const ref = await addDoc(collection(db, "listas"), c);
+      // busca tmp key en cache
+      const tmpKey = `tmp_${c.clientId}`;
+      const cacheEntry = listasCache.get(tmpKey);
+      // Si hay una entrada tmp, la reemplazamos por la real
+      if (cacheEntry) {
+        listasCache.delete(tmpKey);
+        await deleteOneFromIndexedDB(tmpKey).catch(()=>{});
+      }
+      // crear la entrada real en cache (incluye clientId por trazabilidad)
+      const newDoc = { id: ref.id, ...c };
+      listasCache.set(ref.id, newDoc);
+      await saveOneToIndexedDB(newDoc).catch(()=>{});
+      // actualizar pendingUpdates: mover claves que apunten a tmpKey hacia ref.id
+      const upd = loadPendingUpdates();
+      if (upd[tmpKey]) {
+        upd[ref.id] = { ...(upd[ref.id]||{}), ...upd[tmpKey] };
+        delete upd[tmpKey];
+        savePendingUpdates(upd);
+      }
+      // actualizar pendingDeletes: reemplazar tmpKey por ref.id si aparece
+      const dels = loadPendingDeletes();
+      const idxTmp = dels.indexOf(tmpKey);
+      if (idxTmp !== -1) {
+        dels[idxTmp] = ref.id;
+        savePendingDeletes(dels);
+      }
+      mostrarMensaje(`Lista creada en la nube: ${c.lugar || ""}`, "success");
+    } catch(e){ console.error("Error sincronizar create:", e); mostrarMensaje("Error sincronizando una creación pendiente", "error"); }
+  }
+  savePendingCreates([]); // limpiar
+
+  // 2) Updates pendientes
+  const pendingUpdatesNow = loadPendingUpdates();
+  for (const id in pendingUpdatesNow) {
+    try {
+      // si id es tmp_ no existe en servidor — debería haber sido mapeado antes; si aún es tmp_, saltamos
+      if (id.startsWith("tmp_")) {
+        // intentar buscar en cache si tiene clientId y mapear (en caso fallido)
+        const tmp = listasCache.get(id);
+        if (tmp && tmp.clientId) {
+          // intentar localizar documento en servidor por clientId (opcional)
+          // pero asumimos que en la fase de creates se mapearon; si no, saltamos y dejamos la update para más tarde
+          mostrarMensaje(`Sincronización: pendiente update para entrada temporal ${id}`, "info");
+          continue;
+        }
+        continue;
+      }
+      await updateDoc(doc(db, "listas", id), pendingUpdatesNow[id]);
+      mostrarMensaje(`Cambios sincronizados para lista ${id}`, "success");
+    } catch(e){ console.error("Error sync update:", e); mostrarMensaje(`Error sincronizando cambios para ${id}`, "error"); }
+  }
+  savePendingUpdates({}); // limpiar
+
+  // 3) Deletes pendientes
+  const pendingDeletesNow = loadPendingDeletes();
+  for (const d of pendingDeletesNow) {
+    try {
+      if (d.startsWith("tmp_")) {
+        // era una entrada temporal que nunca llegó al servidor: sólo eliminar de cache
+        listasCache.delete(d);
+        await deleteOneFromIndexedDB(d).catch(()=>{});
+        mostrarMensaje(`Eliminada local (temporal): ${d}`, "success");
+        continue;
+      }
+      await deleteDoc(doc(db, "listas", d));
+      mostrarMensaje(`Eliminada en la nube: ${d}`, "success");
+    } catch(e){ console.error("Error sync delete:", e); mostrarMensaje(`Error sincronizando eliminación ${d}`, "error"); }
+  }
+  savePendingDeletes([]); // limpiar
+
+  // Reconstruir timers + refrescar
+  rebuildScheduledTimeoutsFromStorage();
+  actualizarNotificaciones();
+  mostrarMensaje("Sincronización completada.", "success");
+});
+
+window.addEventListener("offline", () => mostrarMensaje("Sin conexión. Las acciones quedarán guardadas localmente y se sincronizarán al reconectar.", "offline"));
+
+/* ======= INICIALIZACIÓN: onSnapshot listener para mantener cache en tiempo real (y carga inicial desde IndexedDB) ======= */
+function startListasListener() {
+  const colRef = collection(db, "listas");
+  onSnapshot(colRef, async (snapshot) => {
+    snapshot.docChanges().forEach(change => {
+      const id = change.doc.id;
+      const data = { id, ...change.doc.data() };
+      if (change.type === "removed") {
+        listasCache.delete(id);
+        cancelScheduledNotificationsForList(id);
+        deleteOneFromIndexedDB(id).catch(()=>{});
+      } else {
+        listasCache.set(id, data);
+        saveOneToIndexedDB(data).catch(()=>{});
+      }
+    });
+    await persistCacheToIndexedDB();
+    actualizarNotificaciones(Array.from(listasCache.values()));
+    mostrarListasFirebase(true);
+  }, async (err) => {
+    console.error("onSnapshot listas error:", err);
+    await loadCacheFromIndexedDB();
+    actualizarNotificaciones(Array.from(listasCache.values()));
+    mostrarListasFirebase(true);
+  });
+}
+
+/* ======= INICIALIZAR ONLOAD ======= */
+document.addEventListener("DOMContentLoaded", async () => {
+  await loadCacheFromIndexedDB().catch(()=>{ /* ignore */ });
   mostrarSeccion("agregar");
+  startListasListener();
   mostrarListasFirebase(true);
-  document.getElementById("filtroTienda")?.addEventListener("input", mostrarResultadosConsulta);
-  document.getElementById("filtroProducto")?.addEventListener("input", mostrarResultadosConsulta);
-  document.getElementById("ordenarPor")?.addEventListener("change", mostrarResultadosConsulta);
+
+  const mostrarResultadosConsultaDebounced = debounce(mostrarResultadosConsulta, 300);
+  document.getElementById("filtroTienda")?.addEventListener("input", mostrarResultadosConsultaDebounced);
+  document.getElementById("filtroProducto")?.addEventListener("input", mostrarResultadosConsultaDebounced);
+  document.getElementById("ordenarPor")?.addEventListener("change", mostrarResultadosConsultaDebounced);
   document.getElementById("btnPendientes")?.addEventListener("click", () => mostrarListasFirebase(true, true));
   document.getElementById("btnTodas")?.addEventListener("click", () => mostrarListasFirebase(true, false));
+
   rebuildScheduledTimeoutsFromStorage();
   actualizarNotificaciones();
 
@@ -853,15 +1188,17 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 });
 
-/* ======= EXPONER FUNCIONES PARA HTML (onclick inline) ======= */
+/* ======= UTILIDADES UI y exportar funciones globales ======= */
 window.mostrarSeccion = function(id){ document.querySelectorAll(".seccion").forEach(s=>s.classList.add("oculto")); const el = document.getElementById(id); if (el) el.classList.remove("oculto"); };
 window.agregarProducto = agregarProducto;
 window.eliminarProducto = eliminarProducto;
 window.alternarDetalle = alternarDetalle;
 window.eliminarLista = eliminarLista;
-window.mostrarSugerencias = mostrarSugerencias;
 window.seleccionarSugerencia = seleccionarSugerencia;
 window.editarLista = editarLista;
 window.cargarMasListas = cargarMasListas;
 window.actualizarNotificaciones = actualizarNotificaciones;
+window.mostrarListasFirebase = mostrarListasFirebase;
 window.irAListaPorId = function(id){ mostrarSeccion("verListas"); setTimeout(()=>{ const elemento = document.querySelector(`#todasLasListas li[data-id="${id}"]`); if (elemento) elemento.scrollIntoView({behavior:"smooth", block:"center"}); },200); };
+
+/* FIN del archivo */

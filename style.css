@@ -243,6 +243,16 @@ input::placeholder { color: #9aa4b2; }
 }
 .mensaje.oculto { opacity: 0; pointer-events: none; visibility: hidden; }
 
+/*======= CSS SUGERIDO para #mensaje (ponlo en tu CSS):*/
+
+#mensaje { padding:8px 12px; border-radius:6px; display:inline-block; transition:opacity .2s; }
+.msg-success { background:#ecfdf5; color:#065f46; border:1px solid #34d399; }
+.msg-offline { background:#fff7ed; color:#7c2d12; border:1px solid #f59e0b; }
+.msg-error { background:#fff1f2; color:#7f1d1d; border:1px solid #ef4444; }
+.msg-info { background:#eff6ff; color:#1e3a8a; border:1px solid #60a5fa; }
+.oculto { opacity:0; pointer-events:none; }
+
+
 /* ================= RESPONSIVE ================= */
 @media (max-width: 600px) {
   nav { flex-direction: column; gap: 8px; }
