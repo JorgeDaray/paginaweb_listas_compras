@@ -1235,6 +1235,15 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 });
 
+// === Registro de Service Worker (PWA/offline) ===
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("./sw.js", { scope: "./" })
+      .then((reg) => console.log("SW registrado:", reg.scope))
+      .catch((err) => console.warn("SW error:", err));
+  });
+}
+
 /* ======= UTILIDADES UI y exportar funciones globales ======= */
 window.mostrarSeccion = function(id){ document.querySelectorAll(".seccion").forEach(s=>s.classList.add("oculto")); const el = document.getElementById(id); if (el) el.classList.remove("oculto"); };
 window.agregarProducto = agregarProducto;
