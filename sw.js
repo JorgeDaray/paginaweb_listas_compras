@@ -6,7 +6,7 @@ const CACHE = "listas-v3";
 // Resuelve rutas absolutas robustas
 const INDEX_URL = new URL("./index.html", self.location).href;
 const SCRIPT_URL = new URL("./script.js", self.location).href;
-const STYLE_URL  = new URL("./styles.css", self.location).href;
+const STYLE_URL  = new URL("./style.css", self.location).href;
 const MANIFEST_URL = new URL("./manifest.webmanifest", self.location).href;
 
 const APP_SHELL = [
