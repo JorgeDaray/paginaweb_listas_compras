@@ -68,7 +68,7 @@ const firebaseConfig = {
 
 /* ================= CONFIG ================= */
 const NOTIFY_OFFSETS_DAYS = [30, 15, 10, 5, 4, 3, 2, 1];
-const MAX_NOTIFY_WINDOW_DAYS = 30;
+const MAX_NOTIFY_WINDOW_DAYS = 1000;
 const NOTIFY_HOUR = 9;
 const STORAGE_KEY_SCHEDULE = "scheduledNotifications_v1";
 
@@ -197,12 +197,26 @@ async function persistCacheToIndexedDB() {
 }
 let _persistScheduled = null;
 function schedulePersistCacheToIndexedDB(delay = 1200) {
-  if (_persistScheduled) clearTimeout(_persistScheduled);
-  _persistScheduled = setTimeout(() => {
-    persistCacheToIndexedDB().catch(e => console.warn("persistCache error:", e));
-    _persistScheduled = null;
-  }, delay);
+  // Si ya hay uno programado, limpiarlo y devolver una promise que representará el nuevo programado.
+  if (_persistScheduled) clearTimeout(_persistScheduled.timeoutId);
+
+  // Devolver una Promise para que callers puedan encadenar .then/.catch/await
+  return new Promise((resolve) => {
+    const timeoutId = setTimeout(async () => {
+      try {
+        await persistCacheToIndexedDB();
+      } catch (e) {
+        console.warn("persistCache error:", e);
+      } finally {
+        _persistScheduled = null;
+        resolve();
+      }
+    }, delay);
+
+    _persistScheduled = { timeoutId };
+  });
 }
+
 async function loadCacheFromIndexedDB() {
   const arr = await loadAllFromIndexedDB();
   listasCache.clear();
@@ -462,78 +476,26 @@ async function advanceMonthlyIfPastForAll() {
   } catch(e){ console.error('advanceMonthlyIfPastForAll error:', e); }
 }
 
-console.debug("marcarListaComoHecha: lista (antes):", lista);
-
 async function advanceMonthlyList(lista) {
   try {
     const f = parseFechaFromString(lista.fecha);
     if (!f) return;
     const nueva = addMonthsKeepDay(f, 1);
     const nuevaStr = formatDateToInput(nueva);
-
-    // payload que queremos aplicar
-    const payload = {
-      fecha: nuevaStr,
-      _notificacionDescartada: false,
-      estado: 'pendiente',
-      completada: false
-    };
-
-    // Si podemos ir a la nube, lo guardamos y tomamos la versión del servidor
-    if (navigator.onLine && canUseFirestore()) {
-      try {
-        await updateDoc(doc(db, 'listas', lista.id), payload);
-      } catch (e) {
-        console.warn("advanceMonthlyList: updateDoc falló, seguiremos intentando actualizar cache/local", e);
-      }
-
-      // Intentar leer la doc desde servidor (si falla, usar payload)
-      let listaObj = null;
-      try {
-        const d = await getDoc(doc(db, "listas", lista.id));
-        if (d.exists()) listaObj = { id: d.id, ...d.data() };
-      } catch(e) {
-        console.warn("advanceMonthlyList: getDoc falló, usando payload para cache", e);
-      }
-
-      if (!listaObj) listaObj = { id: lista.id, ...lista, ...payload };
-
-      // actualizar cache y persistir
-      listasCache.set(listaObj.id, listaObj);
-      await schedulePersistCacheToIndexedDB();
-
-      // reprogramar timers: cancelar y volver a programar
-      cancelScheduledNotificationsForList(listaObj.id);
-      await scheduleNotificationsForList(listaObj);
-
-      mostrarMensaje(`🔁 Pago mensual actualizado a ${formatearFecha(nuevaStr)}`, "success");
-      // refrescar UI
-      actualizarNotificaciones();
-      mostrarListasFirebase(true);
-      return;
-    }
-
-    // Modo offline: persistir en pendingUpdates y en cache
-    const updates = loadPendingUpdates();
-    updates[lista.id] = { ...(updates[lista.id] || {}), ...payload, ultimoPagoFecha: formatDateToInput(new Date()), ultimoPagoGuardadoAt: new Date().toISOString() };
-    savePendingUpdates(updates);
-
-    const cached = listasCache.get(lista.id) || {};
-    const nuevaCache = { ...cached, ...payload, id: lista.id, ultimoPagoFecha: formatDateToInput(new Date()), ultimoPagoGuardadoAt: new Date().toISOString() };
-    listasCache.set(lista.id, nuevaCache);
-    await schedulePersistCacheToIndexedDB();
-
+    await updateDoc(doc(db, 'listas', lista.id), { fecha: nuevaStr, _notificacionDescartada: false, estado: 'pendiente', completada: false });
     cancelScheduledNotificationsForList(lista.id);
-    await scheduleNotificationsForList(nuevaCache);
-
-    mostrarMensaje("Guardado fuera de línea: pago mensual marcado. Se sincronizará al reconectar.", "offline");
-    actualizarNotificaciones();
-    mostrarListasFirebase(true);
-  } catch(e) {
-    console.error('advanceMonthlyList error (general):', e);
-  }
+    if (navigator.onLine && canUseFirestore()) {
+      const d = await getDoc(doc(db, "listas", lista.id));
+      if (d.exists()) {
+        const listaObj = { id: d.id, ...d.data() };
+        listasCache.set(listaObj.id, listaObj);
+        await schedulePersistCacheToIndexedDB();
+        await scheduleNotificationsForList(listaObj);
+      }
+    }
+    mostrarMensaje(`🔁 Pago mensual actualizado a ${formatearFecha(nuevaStr)}`, "success");
+  } catch(e){ console.error('advanceMonthlyList error:', e); }
 }
-console.debug("marcarListaComoHecha: lista (depues):", lista);
 
 /* ======= RENDER: Notificaciones y lista (usando cache) ======= */
 function renderBadge(count) {
@@ -1065,6 +1027,7 @@ async function editarLista(id) {
         // fallback: seguir con cache si existe
       }
     }    
+    
     if (!lista) return mostrarMensaje("Lista no encontrada", "error");
     document.getElementById("lugar").value = lista.lugar || "";
     const fechaInputEl = document.getElementById("fecha");
@@ -1072,12 +1035,11 @@ async function editarLista(id) {
     if (document.getElementById("esPagoMensual")) document.getElementById("esPagoMensual").checked = !!lista.pagoMensual;
     document.getElementById("idListaEditando").value = id;
     document.getElementById("tituloFormulario").textContent = "Editar Lista de Compras";
-
     const form = document.getElementById('formLista');
     if (form) {
       const existing = document.getElementById('reactivar-notif-container');
       if (existing) existing.remove();
-
+      // agregar checkbox para reactivar notificaciones si la lista estaba descartada
       const checkboxHTML = `
         <div id="reactivar-notif-container" style="margin-top:8px;">
           <label style="font-size:0.95em;">
@@ -1086,13 +1048,13 @@ async function editarLista(id) {
           </label>
         </div>
       `;
-
+      // buscamos el input fecha para insertar el checkbox justo después
       const fechaEl = document.getElementById('fecha');
       if (fechaEl && fechaEl.parentElement) {
-        // insertar solo el checkbox justo después del input fecha
+        // insertar el botón y el checkbox justo después del input fecha
         fechaEl.insertAdjacentHTML('afterend', checkboxHTML);
       } else {
-        // fallback: lo agregamos al final del formulario
+        // fallback: los agregamos al final del formulario
         form.insertAdjacentHTML('beforeend', checkboxHTML);
       }
     }
