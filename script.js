@@ -1039,7 +1039,6 @@ async function editarLista(id) {
       const fechaEl = document.getElementById('fecha');
       if (fechaEl && fechaEl.parentElement) {
         // insertar el botón y el checkbox justo después del input fecha
-        fechaEl.insertAdjacentHTML('afterend', botonHTML);
         fechaEl.insertAdjacentHTML('afterend', checkboxHTML);
       } else {
         // fallback: los agregamos al final del formulario
