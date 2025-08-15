@@ -1034,15 +1034,13 @@ async function editarLista(id) {
           </label>
         </div>
       `;
-      const botonHTML = `<div style="margin-top:8px;"><button type="button" onclick="reactivateNotifications('${id}')">🔔 Regresar a notificaciones</button></div>`;
-
       const fechaEl = document.getElementById('fecha');
       if (fechaEl && fechaEl.parentElement) {
-        // insertar el botón y el checkbox justo después del input fecha
+        // insertar solo el checkbox justo después del input fecha
         fechaEl.insertAdjacentHTML('afterend', checkboxHTML);
       } else {
-        // fallback: los agregamos al final del formulario
-        form.insertAdjacentHTML('beforeend', botonHTML + checkboxHTML);
+        // fallback: lo agregamos al final del formulario
+        form.insertAdjacentHTML('beforeend', checkboxHTML);
       }
     }
 
