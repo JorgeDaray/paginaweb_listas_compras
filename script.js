@@ -65,18 +65,6 @@ const firebaseConfig = {
   appId: "1:792067541567:web:f73cf92dd79843d962068a",
   measurementId: "G-YZ02H3KCZC",
 };
-
-/* ================= CONFIG ================= */
-const NOTIFY_OFFSETS_DAYS = [30, 15, 10, 5, 4, 3, 2, 1];
-const MAX_NOTIFY_WINDOW_DAYS = 1000;
-const NOTIFY_HOUR = 9;
-const STORAGE_KEY_SCHEDULE = "scheduledNotifications_v1";
-
-const IDB_DB_NAME = "listas_cache_db";
-const IDB_STORE = "listas";
-const IDB_VERSION = 1;
-const LISTAS_CACHE_KEY_LEGACY = "listasCache_v2"; // fallback localStorage key
-
 /* ======= UTILIDADES FECHA ======= */
 function parseFechaFromString(fechaStr) {
   if (!fechaStr) return null;
@@ -105,6 +93,16 @@ function addMonthsKeepDay(date, months){
   const newDay = Math.min(d, dim);
   return new Date(targetYear, monthIndex, newDay);
 }
+
+/* ======= CONFIG Y CONSTANTES (asegúrate de tener definidas estas variables en tu entorno) ======= */
+const IDB_DB_NAME = 'listas_db_v1';
+const IDB_VERSION = 1;
+const IDB_STORE = 'listas_store_v1';
+const LISTAS_CACHE_KEY_LEGACY = 'listas_cache_legacy_v1';
+const STORAGE_KEY_SCHEDULE = 'listas_schedule_map_v1';
+const NOTIFY_OFFSETS_DAYS = [0,1,3]; // offsets que ya tenías (ejemplo)
+const NOTIFY_HOUR = 9; // hora por defecto para la notificación (si lo usas)
+const MAX_NOTIFY_WINDOW_DAYS = 365; // ejemplo máximo
 
 /* ======= CACHE EN MEMORIA + PERSISTENCIA EN INDEXEDDB (con fallback a localStorage) ======= */
 const listasCache = new Map();
@@ -196,13 +194,16 @@ async function persistCacheToIndexedDB() {
   await saveAllToIndexedDB(arr);
 }
 let _persistScheduled = null;
-function schedulePersistCacheToIndexedDB(delay = 1200) {
-  // Si ya hay uno programado, limpiarlo y devolver una promise que representará el nuevo programado.
-  if (_persistScheduled) clearTimeout(_persistScheduled.timeoutId);
 
-  // Devolver una Promise para que callers puedan encadenar .then/.catch/await
+function schedulePersistCacheToIndexedDB(delay = 1200) {
+  // Si ya hay programado, limpia todos sus timeout ids
+  if (_persistScheduled && Array.isArray(_persistScheduled.timeoutIds)) {
+    _persistScheduled.timeoutIds.forEach(id => clearTimeout(id));
+    _persistScheduled = null;
+  }
+
   return new Promise((resolve) => {
-    const timeoutId = setTimeout(async () => {
+    const timeoutIds = scheduleTimeout(delay, async () => {
       try {
         await persistCacheToIndexedDB();
       } catch (e) {
@@ -211,9 +212,10 @@ function schedulePersistCacheToIndexedDB(delay = 1200) {
         _persistScheduled = null;
         resolve();
       }
-    }, delay);
+    });
 
-    _persistScheduled = { timeoutId };
+    // guarda todos los ids para poder cancelarlos si se vuelve a programar
+    _persistScheduled = { timeoutIds };
   });
 }
 
@@ -226,9 +228,8 @@ async function loadCacheFromIndexedDB() {
 /* ======= UTIL: generar clientId (uuid) ======= */
 function generateClientId() {
   try {
-    if (crypto && crypto.randomUUID) return crypto.randomUUID();
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID();
   } catch(e){}
-  // fallback
   return `cid_${Date.now()}_${Math.floor(Math.random()*1e6)}`;
 }
 
@@ -237,12 +238,55 @@ function safeServerTimestamp() {
   if (typeof serverTimestamp === "function") {
     try { return serverTimestamp(); } catch(_) {}
   }
-  // fallback: timestamp cliente (ISO string)
   return new Date().toISOString();
 }
 
 function canUseFirestore() {
   return !!(firebaseLoaded && db && typeof addDoc === "function" && typeof getDoc === "function" && typeof updateDoc === "function");
+}
+
+// Máximo que acepta setTimeout en ms (2^31-1)
+const MAX_TIMEOUT_MS = 2147483647;
+
+/**
+ * scheduleTimeout(delayMs, cb)
+ * - Permite programar delays mayores al límite de setTimeout encadenando timeouts.
+ * - Devuelve un array con todos los timeoutIds creados (puede ser 1 o varios).
+ */
+function scheduleTimeout(delayMs, cb) {
+  const ids = [];
+  // step procesa "remaining" de forma recursiva si es necesario
+  function step(remaining) {
+    if (remaining <= 0) {
+      try { cb(); } catch (e) { console.error("scheduleTimeout cb error:", e); }
+      return;
+    }
+    if (remaining <= MAX_TIMEOUT_MS) {
+      ids.push(setTimeout(() => {
+        try { cb(); } catch (e) { console.error("scheduleTimeout cb error:", e); }
+      }, remaining));
+    } else {
+      // programar un chunk máximo y volver a llamar
+      ids.push(setTimeout(() => step(remaining - MAX_TIMEOUT_MS), MAX_TIMEOUT_MS));
+    }
+  }
+  step(delayMs);
+  return ids;
+}
+
+/**
+ * scheduleAt(timestampMs, cb)
+ * - Wrapper que acepta timestamp absoluto (Date.getTime()).
+ * - Devuelve array de timeoutIds (posiblemente vacío si el cb se ejecuta inmediatamente).
+ */
+function scheduleAt(timestampMs, cb) {
+  const delay = timestampMs - Date.now();
+  if (delay <= 0) {
+    // ejecutar en siguiente tick y devolver el id para poder clearTimeout si se quiere
+    const id = setTimeout(() => { try { cb(); } catch (e) { console.error("scheduleAt cb error:", e); } }, 0);
+    return [id];
+  }
+  return scheduleTimeout(delay, cb);
 }
 
 /* ======= COLAS LOCALES PARA ACCIONES OFFLINE ======= */
@@ -270,41 +314,77 @@ function cancelScheduledNotificationsForList(listId) {
   const map = loadScheduledMap();
   if (map[listId]) { delete map[listId]; saveScheduledMap(map); }
 }
+function cancelAllScheduledNotifications() {
+  scheduledTimeouts.forEach((arr, id) => arr.forEach(tid => clearTimeout(tid)));
+  scheduledTimeouts.clear();
+  saveScheduledMap({});
+}
 
-/* ======= NOTIFICATIONS API ======= */
+/* ======= NOTIFICATIONS API (DESACTIVADAS: no usamos Notification) ======= */
+// Esta app ya no usará notificaciones del navegador. En su lugar mostramos avisos "in-app".
 async function ensureNotificationPermission() {
-  if (!("Notification" in window)) return false;
-  if (Notification.permission === "granted") return true;
-  if (Notification.permission === "denied") return false;
-  const p = await Notification.requestPermission();
-  return p === "granted";
+  // No pedimos permisos al navegador; siempre false.
+  return false;
 }
 function sendBrowserNotification(title, body, data = {}) {
-  if (!("Notification" in window)) return;
-  if (Notification.permission !== "granted") return;
   try {
-    const n = new Notification(title, { body, data });
-    n.onclick = () => { window.focus(); mostrarSeccion("notificaciones"); };
-  } catch(e){ console.error("Error notificación:", e); }
+    // Mostrar aviso dentro de la app (mensaje temporal visible en la UI)
+    mostrarMensaje(`${title} — ${body}`, "info");
+
+    // Marcar en la cache que hubo una notificación local para esa lista
+    if (data && data.listaId) {
+      try {
+        const lista = listasCache.get(data.listaId);
+        if (lista) {
+          lista._ultimaNotificacionLocal = new Date().toISOString();
+          listasCache.set(lista.id, lista);
+          schedulePersistCacheToIndexedDB().catch(()=>{});
+        }
+      } catch(e){ /* noop */ }
+    }
+  } catch(e){
+    console.log("sendBrowserNotification (in-app) error:", e);
+  }
+}
+
+/* ======= UTIL: Google Calendar link helper ======= */
+function crearGoogleCalendarLink(lista) {
+  if (!lista || !lista.fecha) return "#";
+  const fecha = parseFechaFromString(lista.fecha);
+  if (!fecha || isNaN(fecha)) return "#";
+  const y = fecha.getFullYear();
+  const m = String(fecha.getMonth() + 1).padStart(2,"0");
+  const d = String(fecha.getDate()).padStart(2,"0");
+  const start = `${y}${m}${d}`;
+  const fechaFin = addDays(fecha, 1);
+  const y2 = fechaFin.getFullYear();
+  const m2 = String(fechaFin.getMonth() + 1).padStart(2,"0");
+  const d2 = String(fechaFin.getDate()).padStart(2,"0");
+  const end = `${y2}${m2}${d2}`;
+
+  const title = encodeURIComponent(`Lista: ${lista.lugar || "Compras"}`);
+  const details = encodeURIComponent(
+    (Array.isArray(lista.productos) && lista.productos.length)
+      ? lista.productos.map(p=>`${p.nombre} — $${(p.precio||0).toFixed(2)}${p.descripcion ? ` (${p.descripcion})` : ""}`).join("\n")
+      : "Sin productos detallados."
+  );
+  const location = encodeURIComponent(lista.lugar || "");
+  return `https://calendar.google.com/calendar/r/eventedit?text=${title}&dates=${start}/${end}&details=${details}&location=${location}`;
 }
 
 /* ======= UTILIDADES UI: mostrarMensaje con tipos ======= */
 function mostrarMensaje(texto, tipo = "info") {
-  // tipos: success, offline, error, info
   const mensajeDiv = document.getElementById("mensaje");
   const iconos = { success: "✅", offline: "⚠️", error: "❌", info: "ℹ️" };
   const clases = { success: "msg-success", offline: "msg-offline", error: "msg-error", info: "msg-info" };
   if (!mensajeDiv) {
-    // si no existe en DOM, console.log con prefijo
     console.log(`${iconos[tipo] || ""} ${texto}`);
     return;
   }
-  // Reset clases
   mensajeDiv.classList.remove("msg-success","msg-offline","msg-error","msg-info");
   mensajeDiv.classList.add(clases[tipo] || "msg-info");
   mensajeDiv.textContent = `${iconos[tipo] || ""} ${texto}`;
   mensajeDiv.classList.remove("oculto");
-  // tiempo de mostrado según tipo (usuario pidió ~3s por defecto)
   const timeout = tipo === "offline" ? 6000 : tipo === "error" ? 5000 : 3000;
   setTimeout(()=> mensajeDiv.classList.add("oculto"), timeout);
 }
@@ -335,29 +415,32 @@ function debounce(fn, wait = 300) {
   };
 }
 
-/* ======= SCHEDULER: programar notificaciones ======= */
-// Nota: setTimeout solo funciona mientras la pestaña esté abierta.
+/* ======= SCHEDULER: programar notificaciones (AHORA in-app, NO Notification API) ======= */
 async function scheduleNotificationsForList(lista) {
   if (!lista || !lista.id || !lista.fecha) return;
   // limpia timers previos
+  // limpia timers previos (defensiva: si hay arrays de ids, limpiarlos todos)
   const prevTimers = scheduledTimeouts.get(lista.id) || [];
-  prevTimers.forEach(tid => clearTimeout(tid));
+  prevTimers.forEach(id => {
+    try { clearTimeout(id); } catch(e){ /* ignore */ }
+  });
   scheduledTimeouts.delete(lista.id);
 
-  const fParsed = parseFechaFromString(lista.fecha);
-  if (lista.pagoMensual && fParsed && startOfDay(fParsed).getTime() < startOfDay(new Date()).getTime()) {
-    if (navigator.onLine && canUseFirestore()) { await advanceMonthlyList(lista); return; }
-    else { cancelScheduledNotificationsForList(lista.id); return; }
+  if (lista.pagoMensual) {
+    const fParsed = parseFechaFromString(lista.fecha);
+    if (fParsed && startOfDay(fParsed).getTime() < startOfDay(new Date()).getTime()) {
+      if (navigator.onLine && canUseFirestore()) { await advanceMonthlyList(lista); return; }
+      else { cancelScheduledNotificationsForList(lista.id); return; }
+    }
   }
 
   if (lista.completada) { cancelScheduledNotificationsForList(lista.id); return; }
   if (lista._notificacionDescartada) { cancelScheduledNotificationsForList(lista.id); return; }
   if (!esPendientePorFechaOnly(lista)) { cancelScheduledNotificationsForList(lista.id); return; }
 
-  await ensureNotificationPermission();
+  // No pedimos permiso al navegador (notificaciones desactivadas). Seguimos guardando timestamps
   const map = loadScheduledMap();
   map[lista.id] = Array.isArray(map[lista.id]) ? map[lista.id] : [];
-  // limpiar timestamps pasados y deduplicar
   const now = Date.now();
   map[lista.id] = map[lista.id].filter(ts => ts > now);
   const existingTimestamps = new Set(map[lista.id]);
@@ -373,8 +456,8 @@ async function scheduleNotificationsForList(lista) {
     if (notifyAt <= now) continue;
     if (existingTimestamps.has(notifyAt)) continue;
 
-    const delay = notifyAt - now;
-    const timeoutId = setTimeout(async () => {
+    // Usamos scheduleAt en vez de setTimeout directo
+    const timeoutIds = scheduleAt(notifyAt, async () => {
       try {
         let listaActual = listasCache.get(lista.id) || lista;
         if (navigator.onLine && canUseFirestore()) {
@@ -388,17 +471,21 @@ async function scheduleNotificationsForList(lista) {
         const dias = offset;
         const title = `Lista: ${listaActual.lugar || "Sin lugar"} vence en ${dias} día(s)`;
         const body = `Fecha: ${formatearFecha(listaActual.fecha)} — Abre la app para ver o marcar como hecha.`;
-        if (Notification.permission === "granted") sendBrowserNotification(title, body, { listaId: listaActual.id });
-        actualizarNotificaciones();
-      } catch(e){ console.error("Error timeout notificación:", e); }
-    }, delay);
 
-    timersForList.push(timeoutId);
+        // En vez de crear Notification en el navegador, usamos la función in-app
+        sendBrowserNotification(title, body, { listaId: listaActual.id });
+
+        // Actualiza UI (badge / lista)
+        actualizarNotificaciones();
+      } catch(e){ console.error("Error timeout notificación (in-app):", e); }
+    });
+
+    // timeoutIds es un array (puede tener varios ids si el delay era muy largo)
+    timersForList.push(...timeoutIds);
     map[lista.id].push(notifyAt);
     existingTimestamps.add(notifyAt);
   }
 
-  // Deduplicar y ordenar los timestamps antes de guardar
   map[lista.id] = Array.from(new Set(map[lista.id])).filter(ts => ts > Date.now()).sort((a,b)=>a-b);
   scheduledTimeouts.set(lista.id, timersForList);
   saveScheduledMap(map);
@@ -410,11 +497,19 @@ function rebuildScheduledTimeoutsFromStorage() {
   Object.entries(map).forEach(([listaId, timestamps]) => {
     timestamps = Array.isArray(timestamps) ? timestamps : [];
     const futureTs = timestamps.filter(ts => ts > now);
-    if (futureTs.length === 0) { delete map[listaId]; saveScheduledMap(map); return; }
-    const timersForList = scheduledTimeouts.get(listaId) || [];
+    if (futureTs.length === 0) { 
+      delete map[listaId]; 
+      saveScheduledMap(map); 
+      return; 
+    }
+
+    // Si ya existían timers para esta lista, límpialos (defensivo)
+    const prev = scheduledTimeouts.get(listaId) || [];
+    prev.forEach(id => { try { clearTimeout(id); } catch(e){} });
+    const timersForList = [];
+
     futureTs.forEach(ts => {
-      const delay = ts - now;
-      const timeoutId = setTimeout(async () => {
+      const timeoutIds = scheduleAt(ts, async () => {
         try {
           let listaActual = listasCache.get(listaId) || null;
           if (navigator.onLine && canUseFirestore()) {
@@ -423,16 +518,19 @@ function rebuildScheduledTimeoutsFromStorage() {
               if (d.exists()) listaActual = { id: d.id, ...d.data() };
             } catch(e){ /* ignore */ }
           }
-          if (listaActual && esPendientePorFechaOnly(listaActual) && Notification.permission === "granted") {
+          if (listaActual && esPendientePorFechaOnly(listaActual)) {
             const title = `Lista: ${listaActual.lugar || "Sin lugar"} vence pronto`;
             const body = `Fecha: ${formatearFecha(listaActual.fecha)} — Abre la app para ver o marcar como hecha.`;
             sendBrowserNotification(title, body, { listaId: listaActual.id });
           }
-        } catch(e){ console.error("Error rebuild scheduled:", e); } finally { actualizarNotificaciones(); }
-      }, delay);
-      timersForList.push(timeoutId);
+        } catch(e){ console.error("Error rebuild scheduled (in-app):", e); } finally { actualizarNotificaciones(); }
+      });
+
+      timersForList.push(...timeoutIds);
     });
+
     scheduledTimeouts.set(listaId, timersForList);
+    // guardamos el mapa actualizado (por si eliminamos entradas)
     saveScheduledMap(map);
   });
 }
@@ -447,7 +545,6 @@ function esPendientePorFechaOnly(lista) {
   const hoy = startOfDay(new Date());
   const limite = addDays(hoy, MAX_NOTIFY_WINDOW_DAYS);
   const listaDay = startOfDay(f);
-  // Solo fechas desde hoy (incluye hoy) hasta el límite
   return listaDay.getTime() >= hoy.getTime() && listaDay.getTime() <= limite.getTime();
 }
 
@@ -554,6 +651,10 @@ function renderListaNotificaciones(pendientes) {
 
     const colors = colorForDias(dias);
     const pagoMensualBadge = lista.pagoMensual ? ' <span style="background:#3b82f6;color:#fff;padding:2px 6px;border-radius:6px;margin-left:8px;font-size:0.8em;">📆 PAGO MENSUAL</span>' : '';
+    const calendarBtnHTML = `<a class="btn-google-calendar" href="${crearGoogleCalendarLink(lista)}" target="_blank" rel="noopener noreferrer" style="margin-right:8px;">➕ Añadir a Google Calendar</a>`;
+    const listaParaICS = { id: lista.id, lugar: lista.lugar, fecha: lista.fecha, productos: lista.productos || [] };
+    // Reemplazar creación inline por atributo data-lista-id
+    const icsBtnHTML = `<button type="button" class="btn-download-ics" data-lista-id="${escapeHtml(lista.id)}" style="margin-right:8px;">⬇️ Descargar .ics</button>`;
     const resumenHTML = `
       <div class="lista-resumen" style="border-left:6px solid ${colors.border}; padding-left:8px; background:${colors.bg}; border-radius:4px;">
         <div style="display:flex; justify-content:space-between; align-items:center;">
@@ -574,6 +675,8 @@ function renderListaNotificaciones(pendientes) {
 
     const accionesHTML = `
       <div class="acciones-panel oculto" id="acciones-${lista.id}" style="margin-top:8px;">
+        ${calendarBtnHTML}
+        ${icsBtnHTML}
         <button class="accion-marcar" data-id="${lista.id}">Marcar como hecha</button>
         <button class="accion-descartar" data-id="${lista.id}">Descartar</button>
       </div>
@@ -582,7 +685,7 @@ function renderListaNotificaciones(pendientes) {
     li.innerHTML = resumenHTML + detalleProductosHTML + accionesHTML;
 
     li.addEventListener("click", (e) => {
-      if (e.target && (e.target.matches("button") || e.target.closest("button"))) return;
+      if (e.target && (e.target.matches("button") || e.target.closest("button") || e.target.closest("a.btn-google-calendar"))) return;
       const panelAcc = li.querySelector(`#acciones-${lista.id}`);
       const panelProd = li.querySelector(`#detalle-productos-${lista.id}`);
       if (panelProd) panelProd.classList.toggle("oculto");
@@ -642,10 +745,7 @@ async function actualizarNotificaciones(listasExternas = null) {
 
     const pendientesPorFecha = listas.filter(l => esPendientePorFechaOnly(l));
     renderListaNotificaciones(pendientesPorFecha);
-    // después de calcular pendientesPorFecha:
-    try {
-      await ensureNotificationPermission();
-    } catch(e){ /* no crítico */ }
+    // no pedimos permiso al navegador (notificaciones desactivadas)
     pendientesPorFecha.forEach(lista => scheduleNotificationsForList(lista));
   } catch(e) { console.error("Error actualizarNotificaciones:", e); }
 }
@@ -666,11 +766,9 @@ async function marcarListaComoHecha(id) {
 
     if (lista.pagoMensual) {
       if (navigator.onLine && canUseFirestore()) {
-        // advanceMonthlyList hará el update en la nube y registrará el timestamp servidor
         await advanceMonthlyList(lista);
         mostrarMensaje("Pago mensual avanzado en la nube.", "success");
       } else {
-        // offline: calcular nueva fecha y guardar en pendingUpdates incluyendo la fecha del pago
         const nuevaFecha = formatDateToInput(addMonthsKeepDay(parseFechaFromString(lista.fecha), 1));
         const todayStr = formatDateToInput(new Date());
         const updates = loadPendingUpdates();
@@ -686,7 +784,6 @@ async function marcarListaComoHecha(id) {
       return;
     }
 
-    // restante para listas no mensuales (igual que antes)
     if (navigator.onLine && canUseFirestore()) {
       await updateDoc(doc(db, "listas", id), { estado: "normal", completada: true });
       mostrarMensaje("Lista marcada como hecha (en la nube).", "success");
@@ -734,13 +831,11 @@ async function guardarLista(nuevaLista) {
       await schedulePersistCacheToIndexedDB();
       actualizarNotificaciones();
     } else {
-      // cola la creación en pendingCreates (será insertada al reconectar) con clientId
       const clientId = generateClientId();
       const itemWithClient = { ...nuevaLista, clientId };
       const creates = loadPendingCreates();
       creates.push(itemWithClient);
       savePendingCreates(creates);
-      // id temporal para cache local (tmp_<clientId>)
       const tempId = `tmp_${clientId}`;
       listasCache.set(tempId, { id: tempId, ...nuevaLista, clientId });
       await schedulePersistCacheToIndexedDB();
@@ -764,11 +859,9 @@ async function eliminarLista(id) {
       mostrarResultadosConsulta();
       actualizarNotificaciones();
     } else {
-      // cola la eliminación
       const dels = loadPendingDeletes();
       dels.push(id);
       savePendingDeletes(dels);
-      // quitar de cache local
       listasCache.delete(id);
       await deleteOneFromIndexedDB(id);
       cancelScheduledNotificationsForList(id);
@@ -837,6 +930,8 @@ function mostrarListasDesdeCache(resetCount=false, soloPendientes=false) {
         const iconoP = p.precio === 0 ? `<i class="fa-solid fa-hourglass-half" title="Precio 0" style="color: #f59e0b;"></i>` : "";
         return `<li>${escapeHtml(p.nombre)} ${iconoP} — $${(p.precio||0).toFixed(2)}${p.descripcion ? ` — ${escapeHtml(p.descripcion)}` : ""}</li>`;
       }).join("");
+      const calendarBtnHTML = `<a class="btn-google-calendar" href="${crearGoogleCalendarLink(lista)}" target="_blank" rel="noopener noreferrer">➕ Añadir a Google Calendar</a>`;
+      const icsBtnHTML = `<button type="button" class="btn-download-ics" data-lista-id="${escapeHtml(lista.id)}" style="margin-left:8px;">⬇️ Descargar .ics</button>`;
       ul.innerHTML += `
         <li data-id="${lista.id}">
           <div class="lista-item resumen" onclick="alternarDetalle('${lista.id}')">
@@ -844,6 +939,7 @@ function mostrarListasDesdeCache(resetCount=false, soloPendientes=false) {
             <div class="badge-pendiente">${badge}</div>
           </div>
           <div id="detalle-${lista.id}" class="detalle-lista oculto">
+            ${calendarBtnHTML}
             <ul>${productosHTML}</ul>
             <button onclick="editarLista('${lista.id}')">✏️ Editar esta lista</button>
             <button onclick="eliminarLista('${lista.id}')">🗑️ Eliminar esta lista</button>
@@ -960,7 +1056,6 @@ function mostrarSugerenciasInner(input) {
         <div>📍${escapeHtml(p.lugar)} — 🗓️ ${formatearFecha(p.fecha)}</div>
         <div class="descripcion-sugerida">📝 ${escapeHtml(p.descripcion)}</div>
       `;
-      // click y teclado (Enter / Space)
       divItem.addEventListener('click', () => seleccionarSugerencia(divItem, p));
       divItem.addEventListener('keydown', (ev) => {
         if (ev.key === 'Enter' || ev.key === ' ') {
@@ -988,13 +1083,11 @@ window.mostrarSugerencias = mostrarSugerencias;
 function seleccionarSugerencia(div, producto) {
   try {
     const sugerenciasCont = div.closest('.sugerencias');
-    // tolerancia: si la estructura cambia, buscar hacia arriba hasta .producto
     let contenedorProducto = null;
     if (sugerenciasCont) {
       const prev = sugerenciasCont.previousElementSibling;
       if (prev) contenedorProducto = prev.closest('.producto');
     }
-    // fallback: buscar el .producto ascendente del input seleccionado (por si la estructura cambia)
     if (!contenedorProducto) {
       contenedorProducto = div.closest('.producto') || document.querySelector('.producto');
     }
@@ -1024,7 +1117,6 @@ async function editarLista(id) {
         if (d.exists()) lista = { id: d.id, ...d.data() };
       } catch(err) {
         console.warn("No se pudo obtener lista del servidor:", err);
-        // fallback: seguir con cache si existe
       }
     }    
     
@@ -1039,7 +1131,6 @@ async function editarLista(id) {
     if (form) {
       const existing = document.getElementById('reactivar-notif-container');
       if (existing) existing.remove();
-      // agregar checkbox para reactivar notificaciones si la lista estaba descartada
       const checkboxHTML = `
         <div id="reactivar-notif-container" style="margin-top:8px;">
           <label style="font-size:0.95em;">
@@ -1048,13 +1139,10 @@ async function editarLista(id) {
           </label>
         </div>
       `;
-      // buscamos el input fecha para insertar el checkbox justo después
       const fechaEl = document.getElementById('fecha');
       if (fechaEl && fechaEl.parentElement) {
-        // insertar el botón y el checkbox justo después del input fecha
         fechaEl.insertAdjacentHTML('afterend', checkboxHTML);
       } else {
-        // fallback: los agregamos al final del formulario
         form.insertAdjacentHTML('beforeend', checkboxHTML);
       }
     }
@@ -1089,7 +1177,6 @@ document.getElementById("formLista")?.addEventListener("submit", async (e) => {
   const [year, month, day] = fechaInput.split("-").map(Number);
   const fechaObj = new Date(year, month-1, day);
   const hoy = startOfDay(new Date());
-  // ahora consideramos "pendiente" cuando fecha es >= hoy (incluye hoy)
   const estado = startOfDay(fechaObj).getTime() >= hoy.getTime() ? "pendiente" : "normal";
   const productos = [];
   let hayError = false;
@@ -1116,8 +1203,6 @@ document.getElementById("formLista")?.addEventListener("submit", async (e) => {
         if (d.exists()) prev = { id: d.id, ...d.data() };
       }
 
-      // NUEVA LÓGICA: al editar POR DEFECTO no reactivar notificaciones.
-      // Solo si el usuario marca la casilla y confirma se reactivan.
       if (reactivarCheckbox && reactivarCheckbox.checked) {
         const confirmar = confirm("¿Confirmas que deseas reactivar las notificaciones para esta lista? Si confirmas, la lista volverá a aparecer en notificaciones si aplica.");
         if (confirmar) {
@@ -1126,8 +1211,6 @@ document.getElementById("formLista")?.addEventListener("submit", async (e) => {
           datos._notificacionDescartada = true;
         }
       } else {
-        // Por defecto, al editar dejamos descartadas las notificaciones para que
-        // no reaparezcan automáticamente; usuario deberá reactivar.
         datos._notificacionDescartada = true;
       }
 
@@ -1157,7 +1240,6 @@ document.getElementById("formLista")?.addEventListener("submit", async (e) => {
     await guardarLista({ ...datos, createdAt: safeServerTimestamp(), _notificacionDescartada: false });
   }
 
-  // limpiar formulario (igual que antes)
   e.target.reset();
   document.getElementById("idListaEditando").value = "";
   document.getElementById("tituloFormulario").textContent = "Agregar Lista de Compras";
@@ -1200,90 +1282,77 @@ function eliminarProducto(boton) { const divProducto = boton.parentElement; if (
 window.addEventListener("online", async () => {
   mostrarMensaje("Conexión restablecida. Sincronizando cambios pendientes...", "info");
 
-  // intentar (re)inicializar Firebase cuando se recupere la conexión
   await initFirebase();
   if (!canUseFirestore()) {
     mostrarMensaje("Conexión OK, pero Firebase no disponible. Reintentaré sincronizar más tarde.", "error");
     return;
   }
 
-// 1) Creaciones pendientes (con clientId) -> subir y mapear tmp_ -> ref.id
-const pendingCreates = loadPendingCreates();
-const remainingCreates = []; // <- inicializar
+  const pendingCreates = loadPendingCreates();
+  const remainingCreates = [];
 
-for (const c of pendingCreates) {
-  try {
-    if (!c.clientId) c.clientId = generateClientId();
-    const ref = await addDoc(collection(db, "listas"), c);
-    const tmpKey = `tmp_${c.clientId}`;
-    const cacheEntry = listasCache.get(tmpKey);
-    if (cacheEntry) {
-      listasCache.delete(tmpKey);
-      await deleteOneFromIndexedDB(tmpKey).catch(()=>{});
+  for (const c of pendingCreates) {
+    try {
+      if (!c.clientId) c.clientId = generateClientId();
+      const ref = await addDoc(collection(db, "listas"), c);
+      const tmpKey = `tmp_${c.clientId}`;
+      const cacheEntry = listasCache.get(tmpKey);
+      if (cacheEntry) {
+        listasCache.delete(tmpKey);
+        await deleteOneFromIndexedDB(tmpKey).catch(()=>{});
+      }
+      const newDoc = { id: ref.id, ...c };
+      listasCache.set(ref.id, newDoc);
+      await saveOneToIndexedDB(newDoc).catch(()=>{});
+      const upd = loadPendingUpdates();
+      if (upd[tmpKey]) {
+        upd[ref.id] = { ...(upd[ref.id]||{}), ...upd[tmpKey] };
+        delete upd[tmpKey];
+        savePendingUpdates(upd);
+      }
+      const dels = loadPendingDeletes();
+      const idxTmp = dels.indexOf(tmpKey);
+      if (idxTmp !== -1) {
+        dels[idxTmp] = ref.id;
+        savePendingDeletes(dels);
+      }
+      mostrarMensaje(`Lista creada en la nube: ${c.lugar || ""}`, "success");
+    } catch(e){
+      console.error("Error sincronizar create:", e);
+      remainingCreates.push(c);
+      mostrarMensaje("Error sincronizando una creación pendiente", "error");
     }
-    const newDoc = { id: ref.id, ...c };
-    listasCache.set(ref.id, newDoc);
-    await saveOneToIndexedDB(newDoc).catch(()=>{});
-    // mover updates que referencian tmpKey -> ref.id
-    const upd = loadPendingUpdates();
-    if (upd[tmpKey]) {
-      upd[ref.id] = { ...(upd[ref.id]||{}), ...upd[tmpKey] };
-      delete upd[tmpKey];
-      savePendingUpdates(upd);
-    }
-    // reemplazar tmpKey en deletes
-    const dels = loadPendingDeletes();
-    const idxTmp = dels.indexOf(tmpKey);
-    if (idxTmp !== -1) {
-      dels[idxTmp] = ref.id;
-      savePendingDeletes(dels);
-    }
-    mostrarMensaje(`Lista creada en la nube: ${c.lugar || ""}`, "success");
-  } catch(e){
-    console.error("Error sincronizar create:", e);
-    // mantener la creación pendiente para reintentar después
-    remainingCreates.push(c);
-    mostrarMensaje("Error sincronizando una creación pendiente", "error");
   }
-}
-// guardar sólo las que quedaron
-savePendingCreates(remainingCreates);
+  savePendingCreates(remainingCreates);
 
-  // 2) Updates pendientes
   const pendingUpdatesNow = loadPendingUpdates();
-for (const id in pendingUpdatesNow) {
-  try {
-    if (id.startsWith("tmp_")) {
-      const tmp = listasCache.get(id);
-      if (tmp && tmp.clientId) {
-        mostrarMensaje(`Sincronización: pendiente update para entrada temporal ${id}`, "info");
+  for (const id in pendingUpdatesNow) {
+    try {
+      if (id.startsWith("tmp_")) {
+        const tmp = listasCache.get(id);
+        if (tmp && tmp.clientId) {
+          mostrarMensaje(`Sincronización: pendiente update para entrada temporal ${id}`, "info");
+          continue;
+        }
         continue;
       }
-      continue;
+      const payload = { ...pendingUpdatesNow[id] };
+      if (payload.ultimoPagoGuardadoAt && canUseFirestore()) {
+        payload.ultimoPagoGuardadoAt = safeServerTimestamp();
+      }
+      await updateDoc(doc(db, "listas", id), payload);
+      mostrarMensaje(`Cambios sincronizados para lista ${id}`, "success");
+    } catch(e){
+      console.error("Error sync update:", e);
+      mostrarMensaje(`Error sincronizando cambios para ${id}`, "error");
     }
-
-    // preparar payload
-    const payload = { ...pendingUpdatesNow[id] };
-    if (payload.ultimoPagoGuardadoAt && canUseFirestore()) {
-      // preferimos la marca de tiempo del servidor
-      payload.ultimoPagoGuardadoAt = safeServerTimestamp();
-    }
-
-    await updateDoc(doc(db, "listas", id), payload);
-    mostrarMensaje(`Cambios sincronizados para lista ${id}`, "success");
-  } catch(e){
-    console.error("Error sync update:", e);
-    mostrarMensaje(`Error sincronizando cambios para ${id}`, "error");
   }
-}
-savePendingUpdates({}); // limpiar
+  savePendingUpdates({});
 
-  // 3) Deletes pendientes
   const pendingDeletesNow = loadPendingDeletes();
   for (const d of pendingDeletesNow) {
     try {
       if (d.startsWith("tmp_")) {
-        // era una entrada temporal que nunca llegó al servidor: sólo eliminar de cache
         listasCache.delete(d);
         await deleteOneFromIndexedDB(d).catch(()=>{});
         mostrarMensaje(`Eliminada local (temporal): ${d}`, "success");
@@ -1293,9 +1362,8 @@ savePendingUpdates({}); // limpiar
       mostrarMensaje(`Eliminada en la nube: ${d}`, "success");
     } catch(e){ console.error("Error sync delete:", e); mostrarMensaje(`Error sincronizando eliminación ${d}`, "error"); }
   }
-  savePendingDeletes([]); // limpiar
+  savePendingDeletes([]);
 
-  // Reconstruir timers + refrescar
   rebuildScheduledTimeoutsFromStorage();
   actualizarNotificaciones();
   mostrarMensaje("Sincronización completada.", "success");
@@ -1313,7 +1381,6 @@ async function startListasListener() {
     return;
   }  
   
-  // si ya hay un listener, desenlazarlo (evita duplicados al recargar)
   if (typeof listasListenerUnsubscribe === 'function') {
     try { listasListenerUnsubscribe(); } catch(e){}
     listasListenerUnsubscribe = null;
@@ -1321,7 +1388,6 @@ async function startListasListener() {
 
   try {
     const colRef = collection(db, "listas");
-    // onSnapshot devuelve la función de unsubscribe
     listasListenerUnsubscribe = onSnapshot(colRef, async (snapshot) => {
       snapshot.docChanges().forEach(change => {
         const id = change.doc.id;
@@ -1339,7 +1405,6 @@ async function startListasListener() {
       actualizarNotificaciones(Array.from(listasCache.values()));
       mostrarListasFirebase(true);
     }, async (err) => {
-      // Mejor manejo de error: informar, cargar cache y no dejar la app en estado inutilizable
       console.error("onSnapshot listas error:", err);
       mostrarMensaje("Error al conectar con Firestore; usando datos en caché.", "offline");
       try {
@@ -1349,7 +1414,6 @@ async function startListasListener() {
       } catch(e) {
         console.error("Carga cache tras onSnapshot error fallida:", e);
       }
-      // Desuscribir listener para evitar loops extra (si existe)
       try { if (typeof listasListenerUnsubscribe === 'function') listasListenerUnsubscribe(); } catch(e){}
       listasListenerUnsubscribe = null;
     });
@@ -1361,13 +1425,12 @@ async function startListasListener() {
     mostrarListasFirebase(true);
   }
 }
+
 /* ======= INICIALIZAR ONLOAD (modificado para initFirebase + modo offline parcial) ======= */
 document.addEventListener("DOMContentLoaded", async () => {
   try {
-    // Intentar inicializar firebase dinámicamente. Si falla, seguimos en modo offline solo con cache local.
     const firebaseOk = await initFirebase();
 
-    // 1) Intentar habilitar persistencia y avisar si falla (solo si Firestore cargó)
     if (firebaseOk && typeof enableIndexedDbPersistence === "function") {
       try {
         await enableIndexedDbPersistence(db);
@@ -1385,35 +1448,28 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
       }
     } else if (!firebaseOk) {
-      // Firebase no está disponible: modo offline parcial
       mostrarMensaje("Modo offline: Firebase no disponible. Usando datos locales.", "offline");
     }
 
-    // 2) Cargar cache desde IndexedDB (si la hay) *antes* de renderizar
     await loadCacheFromIndexedDB().catch((e) => { console.warn("loadCacheFromIndexedDB falló:", e); });
 
-    // 3) Renderizar UI con cache (evita pantalla en blanco / "sin señal")
     mostrarSeccion("agregar");
     mostrarListasFirebase(true);
 
-    // 4) Arrancar el listener onSnapshot solo si Firebase cargó; si no, usamos la cache ya cargada
     if (firebaseOk && typeof startListasListener === "function") {
       try {
         startListasListener();
       } catch (e) {
         console.error("startListasListener falló:", e);
         mostrarMensaje("No se pudo iniciar la sincronización en tiempo real. Se usarán datos locales.", "offline");
-        // asegurar que se muestren datos de cache
         actualizarNotificaciones();
         mostrarListasFirebase(true);
       }
     } else {
-      // no hay firebase -> ya mostramos datos locales
       actualizarNotificaciones();
       mostrarListasFirebase(true);
     }
 
-    // 5) Handlers y reconstrucción de timers
     const mostrarResultadosConsultaDebounced = debounce(mostrarResultadosConsulta, 300);
     document.getElementById("filtroTienda")?.addEventListener("input", mostrarResultadosConsultaDebounced);
     document.getElementById("filtroProducto")?.addEventListener("input", mostrarResultadosConsultaDebounced);
@@ -1424,7 +1480,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     rebuildScheduledTimeoutsFromStorage();
     actualizarNotificaciones();
 
-    // Cerrar sugerencias si se hace click fuera
     document.addEventListener('click', (e) => {
       if (e.target.closest('.sugerencias') || e.target.closest('.sugerencia-item') || e.target.closest('.producto-nombre')) {
         return;
@@ -1436,7 +1491,6 @@ document.addEventListener("DOMContentLoaded", async () => {
       });
     });
 
-    // Escape para cerrar sugerencias
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
         document.querySelectorAll('.sugerencias').forEach(s => {
@@ -1445,6 +1499,41 @@ document.addEventListener("DOMContentLoaded", async () => {
           s.setAttribute('aria-hidden','true');
         });
       }
+    });
+
+    // Delegación para botones .ics — pegar dentro de DOMContentLoaded o al final del archivo
+    document.addEventListener('click', (e) => {
+      const btn = e.target.closest && e.target.closest('.btn-download-ics');
+      if (!btn) return;
+      const listaId = btn.getAttribute('data-lista-id');
+      if (!listaId) return;
+
+      // Intentar obtener la lista desde cache
+      const lista = listasCache.get(listaId);
+      if (lista) {
+        descargarICS(lista);
+        return;
+      }
+
+      // Si no está en cache, intentar desde Firestore si está disponible
+      if (navigator.onLine && canUseFirestore()) {
+        (async () => {
+          try {
+            const d = await getDoc(doc(db, "listas", listaId));
+            if (d.exists()) {
+              descargarICS({ id: d.id, ...d.data() });
+            } else {
+              mostrarMensaje("Lista no encontrada para generar .ics", "error");
+            }
+          } catch (err) {
+            console.error("Error obteniendo lista para .ics:", err);
+            mostrarMensaje("No se pudo generar el .ics (error servidor).", "error");
+          }
+        })();
+        return;
+      }
+
+      mostrarMensaje("Lista no disponible localmente para generar .ics", "error");
     });
 
   } catch (e) {
@@ -1467,7 +1556,6 @@ async function reactivateNotifications(id) {
       if (cached) { cached._notificacionDescartada = false; listasCache.set(id, cached); await schedulePersistCacheToIndexedDB(); }
       mostrarMensaje("Guardado fuera de línea: se reactivarán notificaciones al sincronizar.", "offline");
     }
-    // re-schedule
     const lista = listasCache.get(id);
     if (lista && esPendientePorFechaOnly(lista)) await scheduleNotificationsForList(lista);
     actualizarNotificaciones();
@@ -1482,6 +1570,73 @@ if ("serviceWorker" in navigator) {
       .then((reg) => console.log("SW registrado:", reg.scope))
       .catch((err) => console.warn("SW error:", err));
   });
+}
+
+// Generar contenido ICS para una lista (all-day event)
+function generarContenidoICS(lista) {
+  if (!lista || !lista.fecha) return null;
+  const dtStartDate = parseFechaFromString(lista.fecha);
+  if (!dtStartDate || isNaN(dtStartDate)) return null;
+
+  const pad = (n) => String(n).padStart(2, '0');
+  const y = dtStartDate.getFullYear();
+  const m = pad(dtStartDate.getMonth()+1);
+  const d = pad(dtStartDate.getDate());
+  const start = `${y}${m}${d}`;
+
+  const endDate = addDays(dtStartDate, 1);
+  const ye = endDate.getFullYear();
+  const me = pad(endDate.getMonth()+1);
+  const de = pad(endDate.getDate());
+  const end = `${ye}${me}${de}`;
+
+  const title = (lista.lugar && lista.lugar.trim()) ? `Lista: ${lista.lugar.trim()}` : 'Lista de Compras';
+  // USAR salto de línea real aquí
+  const description = (Array.isArray(lista.productos) && lista.productos.length)
+    ? lista.productos.map(p => `${p.nombre} — $${(p.precio||0).toFixed(2)}${p.descripcion ? ` (${p.descripcion})` : ''}`).join('\n')
+    : 'Sin productos detallados';
+
+  const location = lista.lugar ? lista.lugar.replace(/\r?\n/g, ' ') : '';
+  const uid = `lista-${lista.id || generateClientId()}@miapp`;
+
+  const icsLines = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//MiApp//Listas//ES',
+    'CALSCALE:GREGORIAN',
+    'BEGIN:VEVENT',
+    `UID:${uid}`,
+    `DTSTAMP:${(new Date()).toISOString().replace(/[-:]/g,'').split('.')[0]}Z`,
+    `DTSTART;VALUE=DATE:${start}`,
+    `DTEND;VALUE=DATE:${end}`,
+    `SUMMARY:${escapeICSText(title)}`,
+    `DESCRIPTION:${escapeICSText(description)}`,
+    `LOCATION:${escapeICSText(location)}`,
+    'END:VEVENT',
+    'END:VCALENDAR'
+  ];
+  return icsLines.join('\r\n');
+}
+
+function escapeICSText(s) {
+  if (!s) return '';
+  return String(s).replace(/\\/g,'\\\\').replace(/;/g,'\\;').replace(/,/g,'\\,').replace(/\r?\n/g,'\\n');
+}
+
+// Crea y descarga el .ics en el navegador
+function descargarICS(lista) {
+  const contenido = generarContenidoICS(lista);
+  if (!contenido) { mostrarMensaje("No se pudo generar el archivo .ics para esta lista.", "error"); return; }
+  const blob = new Blob([contenido], { type: 'text/calendar;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const nombre = (lista.lugar ? lista.lugar.replace(/\s+/g,'_').slice(0,40) : 'lista') + `_${lista.fecha || ''}.ics`;
+  a.href = url;
+  a.download = nombre;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
 
 /* ======= UTILIDADES UI y exportar funciones globales ======= */
