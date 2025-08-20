@@ -347,29 +347,75 @@ function sendBrowserNotification(title, body, data = {}) {
   }
 }
 
-/* ======= UTIL: Google Calendar link helper ======= */
-function crearGoogleCalendarLink(lista) {
+// ===== Helper: crea URL para abrir Google Calendar con datos precargados (por hora) =====
+function crearGoogleCalendarLink(lista, opts = {}) {
+  // opts: { allDay: false, hour: <number>, durationMinutes: <number> }
   if (!lista || !lista.fecha) return "#";
   const fecha = parseFechaFromString(lista.fecha);
   if (!fecha || isNaN(fecha)) return "#";
-  const y = fecha.getFullYear();
-  const m = String(fecha.getMonth() + 1).padStart(2,"0");
-  const d = String(fecha.getDate()).padStart(2,"0");
-  const start = `${y}${m}${d}`;
-  const fechaFin = addDays(fecha, 1);
-  const y2 = fechaFin.getFullYear();
-  const m2 = String(fechaFin.getMonth() + 1).padStart(2,"0");
-  const d2 = String(fechaFin.getDate()).padStart(2,"0");
-  const end = `${y2}${m2}${d2}`;
 
-  const title = encodeURIComponent(`Lista: ${lista.lugar || "Compras"}`);
-  const details = encodeURIComponent(
-    (Array.isArray(lista.productos) && lista.productos.length)
-      ? lista.productos.map(p=>`${p.nombre} — $${(p.precio||0).toFixed(2)}${p.descripcion ? ` (${p.descripcion})` : ""}`).join("\n")
-      : "Sin productos detallados."
-  );
-  const location = encodeURIComponent(lista.lugar || "");
-  return `https://calendar.google.com/calendar/r/eventedit?text=${title}&dates=${start}/${end}&details=${details}&location=${location}`;
+  const allDay = !!opts.allDay;
+  const hour = (typeof opts.hour === 'number') ? opts.hour : (typeof NOTIFY_HOUR === 'number' ? NOTIFY_HOUR : 9);
+  const durationMinutes = Number(opts.durationMinutes || 60);
+
+  function pad(n){ return String(n).padStart(2,'0'); }
+
+  // para all-day: YYYYMMDD / YYYYMMDD (end = next day)
+  if (allDay) {
+    const y = fecha.getFullYear();
+    const m = pad(fecha.getMonth() + 1);
+    const d = pad(fecha.getDate());
+    const start = `${y}${m}${d}`;
+    const endDate = addDays(fecha, 1);
+    const ye = endDate.getFullYear();
+    const me = pad(endDate.getMonth() + 1);
+    const de = pad(endDate.getDate());
+    const end = `${ye}${me}${de}`;
+    const title = `Lista: ${lista.lugar || "Compras"}`;
+    const description = (Array.isArray(lista.productos) && lista.productos.length)
+      ? lista.productos.map(p => `${p.nombre} — $${(p.precio||0).toFixed(2)}${p.descripcion ? ` (${p.descripcion})` : ''}`).join('\n')
+      : 'Sin productos detallados';
+    const params = new URLSearchParams({
+      action: 'TEMPLATE',
+      text: title,
+      details: description,
+      location: lista.lugar || ''
+    });
+    const base = 'https://calendar.google.com/calendar/render';
+    return `${base}?${params.toString()}&dates=${encodeURIComponent(start + '/' + end)}`;
+  }
+
+  // evento con hora: construimos start/end en UTC (YYYYMMDDTHHMMSSZ)
+  const startLocal = dateAtHour(fecha, hour); // usa helper dateAtHour para fijar la hora local
+  const endLocal = new Date(startLocal.getTime() + durationMinutes * 60000);
+
+  function toUTCDateTimeString(d) {
+    // YYYYMMDDTHHMMSSZ (UTC)
+    const y = d.getUTCFullYear();
+    const mo = pad(d.getUTCMonth() + 1);
+    const da = pad(d.getUTCDate());
+    const hh = pad(d.getUTCHours());
+    const mm = pad(d.getUTCMinutes());
+    const ss = pad(d.getUTCSeconds());
+    return `${y}${mo}${da}T${hh}${mm}${ss}Z`;
+  }
+
+  const startStr = toUTCDateTimeString(startLocal);
+  const endStr = toUTCDateTimeString(endLocal);
+
+  const title = `Lista: ${lista.lugar || "Compras"}`;
+  const description = (Array.isArray(lista.productos) && lista.productos.length)
+    ? lista.productos.map(p => `${p.nombre} — $${(p.precio||0).toFixed(2)}${p.descripcion ? ` (${p.descripcion})` : ''}`).join('\n')
+    : 'Sin productos detallados';
+  const params = new URLSearchParams({
+    action: 'TEMPLATE',
+    text: title,
+    details: description,
+    location: lista.lugar || ''
+  });
+  const base = 'https://calendar.google.com/calendar/render';
+  // google acepta dates en formato datetimeUTC: start/end (con Z)
+  return `${base}?${params.toString()}&dates=${encodeURIComponent(startStr + '/' + endStr)}`;
 }
 
 /* ======= UTILIDADES UI: mostrarMensaje con tipos ======= */
@@ -624,19 +670,54 @@ function colorForDias(dias) {
   return { border: "#10b981", bg: "#f0fdf4" };
 }
 
+// --------- Paginación para la lista de notificaciones (mostrar 5 en vez de todas) ----------
+let notificacionesMostradasCount = 5; // cuántas notificaciones mostrar inicialmente
+const NOTIFICATIONS_PAGE_INCREMENT = 5;
+
+function cargarMasNotificaciones() {
+  notificacionesMostradasCount += NOTIFICATIONS_PAGE_INCREMENT;
+  // volver a renderizar usando los datos actuales en cache
+  const pendientes = Array.from(listasCache.values()).filter(l => esPendientePorFechaOnly(l));
+  renderListaNotificaciones(pendientes);
+}
+function mostrarMenosNotificaciones() {
+  notificacionesMostradasCount = NOTIFICATIONS_PAGE_INCREMENT;
+  const pendientes = Array.from(listasCache.values()).filter(l => esPendientePorFechaOnly(l));
+  renderListaNotificaciones(pendientes);
+}
+window.cargarMasNotificaciones = cargarMasNotificaciones;
+window.mostrarMenosNotificaciones = mostrarMenosNotificaciones;
+
+// Reemplaza la función renderListaNotificaciones por esta versión paginada
 function renderListaNotificaciones(pendientes) {
   const ul = document.getElementById("listaNotificaciones");
   if (!ul) return;
   ul.innerHTML = "";
+
   if (!pendientes || pendientes.length === 0) {
-    const li = document.createElement("li"); li.textContent = "No hay notificaciones por fecha."; ul.appendChild(li); renderBadge(0); return;
+    const li = document.createElement("li");
+    li.textContent = "No hay notificaciones por fecha.";
+    ul.appendChild(li);
+    renderBadge(0);
+    return;
   }
+
+  // orden y conteo total
   pendientes.sort((a,b)=> new Date(a.fecha) - new Date(b.fecha));
-  renderBadge(pendientes.length);
-  pendientes.forEach(lista => {
+  const totalCount = pendientes.length;
+
+  // slice para paginación
+  const mostradas = pendientes.slice(0, notificacionesMostradasCount);
+
+  // Badge debe reflejar el total pendiente (no la cantidad mostrada)
+  renderBadge(totalCount);
+
+  // Renderizar solo las que toca mostrar
+  mostradas.forEach(lista => {
     const li = document.createElement("li");
     li.className = "notificacion-item";
     li.dataset.id = lista.id;
+
     const fecha = parseFechaFromString(lista.fecha);
     const dias = calcularDiasRestantes(fecha);
     const estadoTexto = dias < 0 ? `Vencida hace ${Math.abs(dias)} día(s)` :
@@ -651,10 +732,12 @@ function renderListaNotificaciones(pendientes) {
 
     const colors = colorForDias(dias);
     const pagoMensualBadge = lista.pagoMensual ? ' <span style="background:#3b82f6;color:#fff;padding:2px 6px;border-radius:6px;margin-left:8px;font-size:0.8em;">📆 PAGO MENSUAL</span>' : '';
-    const calendarBtnHTML = `<a class="btn-google-calendar" href="${crearGoogleCalendarLink(lista)}" target="_blank" rel="noopener noreferrer" style="margin-right:8px;">➕ Añadir a Google Calendar</a>`;
-    const listaParaICS = { id: lista.id, lugar: lista.lugar, fecha: lista.fecha, productos: lista.productos || [] };
-    // Reemplazar creación inline por atributo data-lista-id
+
+    // Reusar tu helper crearGoogleCalendarLink y descargarICS (siempre abrirá con info)
+    const calendarBtnHTML = `<a class="btn-google-calendar" href="#" onclick="(async (e)=>{ e.preventDefault(); const id='${escapeHtml(lista.id)}'; let l = listasCache.get(id); if(!l && navigator.onLine && canUseFirestore()){ try { const d = await getDoc(doc(db,'listas',id)); if(d.exists()) l = { id:d.id, ...d.data() }; } catch(err){ console.warn('No se pudo obtener lista para GC:', err); } } if(!l){ mostrarMensaje('Lista no disponible para agregar al calendario', 'error'); return; } window.open(crearGoogleCalendarLink(l, { allDay: false, hour: ${NOTIFY_HOUR || 9}, durationMinutes: 60 }), '_blank'); })()" style="margin-right:8px;">➕ Añadir a Google Calendar</a>`;
+
     const icsBtnHTML = `<button type="button" class="btn-download-ics" data-lista-id="${escapeHtml(lista.id)}" style="margin-right:8px;">⬇️ Descargar .ics</button>`;
+
     const resumenHTML = `
       <div class="lista-resumen" style="border-left:6px solid ${colors.border}; padding-left:8px; background:${colors.bg}; border-radius:4px;">
         <div style="display:flex; justify-content:space-between; align-items:center;">
@@ -692,6 +775,7 @@ function renderListaNotificaciones(pendientes) {
       if (panelAcc) panelAcc.classList.toggle("oculto");
     });
 
+    // eventos para marcar/descartar
     li.querySelectorAll(".accion-marcar").forEach(btn => btn.addEventListener("click", async (ev) => {
       ev.stopPropagation();
       const id = btn.dataset.id;
@@ -709,6 +793,32 @@ function renderListaNotificaciones(pendientes) {
 
     ul.appendChild(li);
   });
+
+  // Footer con controles de paginación
+  const footerLi = document.createElement("li");
+  footerLi.className = "notifs-footer";
+  footerLi.style.paddingTop = "8px";
+  footerLi.style.borderTop = "1px solid #eee";
+  footerLi.style.marginTop = "8px";
+  footerLi.style.display = "flex";
+  footerLi.style.justifyContent = "center";
+  footerLi.style.gap = "8px";
+
+  if (totalCount > mostradas.length) {
+    const btnMas = document.createElement("button");
+    btnMas.textContent = `Cargar ${NOTIFICATIONS_PAGE_INCREMENT} más (${mostradas.length}/${totalCount})`;
+    btnMas.onclick = (e) => { e.preventDefault(); cargarMasNotificaciones(); };
+    footerLi.appendChild(btnMas);
+  }
+
+  if (mostradas.length > NOTIFICATIONS_PAGE_INCREMENT) {
+    const btnMenos = document.createElement("button");
+    btnMenos.textContent = "Mostrar menos";
+    btnMenos.onclick = (e) => { e.preventDefault(); mostrarMenosNotificaciones(); };
+    footerLi.appendChild(btnMenos);
+  }
+
+  if (footerLi.childElementCount > 0) ul.appendChild(footerLi);
 }
 
 /* ======= ACTUALIZAR NOTIFICACIONES (usa cache) ======= */
@@ -930,7 +1040,8 @@ function mostrarListasDesdeCache(resetCount=false, soloPendientes=false) {
         const iconoP = p.precio === 0 ? `<i class="fa-solid fa-hourglass-half" title="Precio 0" style="color: #f59e0b;"></i>` : "";
         return `<li>${escapeHtml(p.nombre)} ${iconoP} — $${(p.precio||0).toFixed(2)}${p.descripcion ? ` — ${escapeHtml(p.descripcion)}` : ""}</li>`;
       }).join("");
-      const calendarBtnHTML = `<a class="btn-google-calendar" href="${crearGoogleCalendarLink(lista)}" target="_blank" rel="noopener noreferrer">➕ Añadir a Google Calendar</a>`;
+      const calendarBtnHTML = `<a class="btn-google-calendar" href="#" onclick="(async (e)=>{ e.preventDefault(); const id='${escapeHtml(lista.id)}'; let l = listasCache.get(id); if(!l && navigator.onLine && canUseFirestore()){ try { const d = await getDoc(doc(db,'listas',id)); if(d.exists()) l = { id:d.id, ...d.data() }; } catch(err){ console.warn('No se pudo obtener lista para GC:', err); } } if(!l){ mostrarMensaje('Lista no disponible para agregar al calendario', 'error'); return; } // Abrir Google Calendar con hora (2h por defecto)
+      window.open(crearGoogleCalendarLink(l, { allDay: false, hour: ${NOTIFY_HOUR || 9}, durationMinutes: 120 }), '_blank'); })()" style="margin-right:8px;">➕ Añadir a Google Calendar</a>`;
       const icsBtnHTML = `<button type="button" class="btn-download-ics" data-lista-id="${escapeHtml(lista.id)}" style="margin-left:8px;">⬇️ Descargar .ics</button>`;
       ul.innerHTML += `
         <li data-id="${lista.id}">
@@ -1572,30 +1683,32 @@ if ("serviceWorker" in navigator) {
   });
 }
 
-// Generar contenido ICS para una lista (all-day event)
-function generarContenidoICS(lista) {
+// Generar contenido .ics con hora (usa NOTIFY_HOUR por defecto, duración 1h)
+function generarContenidoICS(lista, opts = {}) {
   if (!lista || !lista.fecha) return null;
   const dtStartDate = parseFechaFromString(lista.fecha);
   if (!dtStartDate || isNaN(dtStartDate)) return null;
 
-  const pad = (n) => String(n).padStart(2, '0');
-  const y = dtStartDate.getFullYear();
-  const m = pad(dtStartDate.getMonth()+1);
-  const d = pad(dtStartDate.getDate());
-  const start = `${y}${m}${d}`;
+  const hour = (typeof opts.hour === 'number') ? opts.hour : (typeof NOTIFY_HOUR === 'number' ? NOTIFY_HOUR : 9);
+  const durationMinutes = Number(opts.durationMinutes || 120); // duración por defecto 2 horas
 
-  const endDate = addDays(dtStartDate, 1);
-  const ye = endDate.getFullYear();
-  const me = pad(endDate.getMonth()+1);
-  const de = pad(endDate.getDate());
-  const end = `${ye}${me}${de}`;
+  // inicio en la hora local indicada
+  const startLocal = dateAtHour(dtStartDate, hour);
+  const endLocal = new Date(startLocal.getTime() + durationMinutes * 120000); // duración en milisegundos
+
+  function pad(n){ return String(n).padStart(2,'0'); }
+  function toICSDatetimeUTC(d){
+    // 20250815T090000Z
+    return d.toISOString().replace(/[-:]/g,'').split('.')[0] + 'Z';
+  }
+
+  const start = toICSDatetimeUTC(startLocal);
+  const end = toICSDatetimeUTC(endLocal);
 
   const title = (lista.lugar && lista.lugar.trim()) ? `Lista: ${lista.lugar.trim()}` : 'Lista de Compras';
-  // USAR salto de línea real aquí
   const description = (Array.isArray(lista.productos) && lista.productos.length)
     ? lista.productos.map(p => `${p.nombre} — $${(p.precio||0).toFixed(2)}${p.descripcion ? ` (${p.descripcion})` : ''}`).join('\n')
     : 'Sin productos detallados';
-
   const location = lista.lugar ? lista.lugar.replace(/\r?\n/g, ' ') : '';
   const uid = `lista-${lista.id || generateClientId()}@miapp`;
 
@@ -1606,9 +1719,9 @@ function generarContenidoICS(lista) {
     'CALSCALE:GREGORIAN',
     'BEGIN:VEVENT',
     `UID:${uid}`,
-    `DTSTAMP:${(new Date()).toISOString().replace(/[-:]/g,'').split('.')[0]}Z`,
-    `DTSTART;VALUE=DATE:${start}`,
-    `DTEND;VALUE=DATE:${end}`,
+    `DTSTAMP:${toICSDatetimeUTC(new Date())}`,
+    `DTSTART:${start}`,
+    `DTEND:${end}`,
     `SUMMARY:${escapeICSText(title)}`,
     `DESCRIPTION:${escapeICSText(description)}`,
     `LOCATION:${escapeICSText(location)}`,
