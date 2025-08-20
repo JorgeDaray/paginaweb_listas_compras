@@ -348,74 +348,57 @@ function sendBrowserNotification(title, body, data = {}) {
 }
 
 // ===== Helper: crea URL para abrir Google Calendar con datos precargados (por hora) =====
-function crearGoogleCalendarLink(lista, opts = {}) {
-  // opts: { allDay: false, hour: <number>, durationMinutes: <number> }
+/**
+ * crearGoogleCalendarLink(lista, opts)
+ * opts = {
+ *   allDay: true|false,        // true = evento todo el día (por defecto), false = evento con hora
+ *   hour: 9,                   // hora local de inicio si allDay=false
+ *   durationMinutes: 60        // duración si allDay=false
+ * }
+ */
+function crearGoogleCalendarLink(lista, opts = { allDay: true, hour: NOTIFY_HOUR || 9, durationMinutes: 60 }) {
   if (!lista || !lista.fecha) return "#";
   const fecha = parseFechaFromString(lista.fecha);
   if (!fecha || isNaN(fecha)) return "#";
 
-  const allDay = !!opts.allDay;
-  const hour = (typeof opts.hour === 'number') ? opts.hour : (typeof NOTIFY_HOUR === 'number' ? NOTIFY_HOUR : 9);
-  const durationMinutes = Number(opts.durationMinutes || 60);
+  const pad = (n) => String(n).padStart(2, "0");
 
-  function pad(n){ return String(n).padStart(2,'0'); }
+  let start, end;
 
-  // para all-day: YYYYMMDD / YYYYMMDD (end = next day)
-  if (allDay) {
+  if (opts.allDay) {
+    // formato YYYYMMDD para all-day (Google acepta este formato)
     const y = fecha.getFullYear();
     const m = pad(fecha.getMonth() + 1);
     const d = pad(fecha.getDate());
-    const start = `${y}${m}${d}`;
-    const endDate = addDays(fecha, 1);
-    const ye = endDate.getFullYear();
-    const me = pad(endDate.getMonth() + 1);
-    const de = pad(endDate.getDate());
-    const end = `${ye}${me}${de}`;
-    const title = `Lista: ${lista.lugar || "Compras"}`;
-    const description = (Array.isArray(lista.productos) && lista.productos.length)
-      ? lista.productos.map(p => `${p.nombre} — $${(p.precio||0).toFixed(2)}${p.descripcion ? ` (${p.descripcion})` : ''}`).join('\n')
-      : 'Sin productos detallados';
-    const params = new URLSearchParams({
-      action: 'TEMPLATE',
-      text: title,
-      details: description,
-      location: lista.lugar || ''
-    });
-    const base = 'https://calendar.google.com/calendar/render';
-    return `${base}?${params.toString()}&dates=${encodeURIComponent(start + '/' + end)}`;
+    start = `${y}${m}${d}`;
+    const fechaFin = addDays(fecha, 1);
+    const y2 = fechaFin.getFullYear();
+    const m2 = pad(fechaFin.getMonth() + 1);
+    const d2 = pad(fechaFin.getDate());
+    end = `${y2}${m2}${d2}`;
+  } else {
+    // evento con hora: construiremos timestamps en formato YYYYMMDDTHHMMSSZ (UTC)
+    const startDateLocal = new Date(fecha);
+    startDateLocal.setHours(opts.hour || NOTIFY_HOUR || 9, 0, 0, 0);
+    const endDateLocal = new Date(startDateLocal.getTime() + ((opts.durationMinutes || 60) * 60 * 1000));
+
+    // convertimos a ISO UTC estilo Google: YYYYMMDDTHHMMSSZ
+    const toGCalTs = (dt) => dt.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
+    start = toGCalTs(startDateLocal);
+    end = toGCalTs(endDateLocal);
   }
 
-  // evento con hora: construimos start/end en UTC (YYYYMMDDTHHMMSSZ)
-  const startLocal = dateAtHour(fecha, hour); // usa helper dateAtHour para fijar la hora local
-  const endLocal = new Date(startLocal.getTime() + durationMinutes * 60000);
+  const title = encodeURIComponent(`Lista: ${lista.lugar || "Compras"}`);
+  const details = encodeURIComponent(
+    (Array.isArray(lista.productos) && lista.productos.length)
+      ? lista.productos.map(p => `${p.nombre} — $${(p.precio||0).toFixed(2)}${p.descripcion ? ` (${p.descripcion})` : ""}`).join("\n")
+      : "Sin productos detallados."
+  );
+  const location = encodeURIComponent(lista.lugar || "");
 
-  function toUTCDateTimeString(d) {
-    // YYYYMMDDTHHMMSSZ (UTC)
-    const y = d.getUTCFullYear();
-    const mo = pad(d.getUTCMonth() + 1);
-    const da = pad(d.getUTCDate());
-    const hh = pad(d.getUTCHours());
-    const mm = pad(d.getUTCMinutes());
-    const ss = pad(d.getUTCSeconds());
-    return `${y}${mo}${da}T${hh}${mm}${ss}Z`;
-  }
-
-  const startStr = toUTCDateTimeString(startLocal);
-  const endStr = toUTCDateTimeString(endLocal);
-
-  const title = `Lista: ${lista.lugar || "Compras"}`;
-  const description = (Array.isArray(lista.productos) && lista.productos.length)
-    ? lista.productos.map(p => `${p.nombre} — $${(p.precio||0).toFixed(2)}${p.descripcion ? ` (${p.descripcion})` : ''}`).join('\n')
-    : 'Sin productos detallados';
-  const params = new URLSearchParams({
-    action: 'TEMPLATE',
-    text: title,
-    details: description,
-    location: lista.lugar || ''
-  });
-  const base = 'https://calendar.google.com/calendar/render';
-  // google acepta dates en formato datetimeUTC: start/end (con Z)
-  return `${base}?${params.toString()}&dates=${encodeURIComponent(startStr + '/' + endStr)}`;
+  // la URL para Google Calendar usa el mismo parámetro `dates` tanto para all-day (YYYYMMDD/YYYYMMDD)
+  // como para eventos con hora (YYYYMMDDTHHMMSSZ/YYYYMMDDTHHMMSSZ)
+  return `https://calendar.google.com/calendar/r/eventedit?text=${title}&dates=${start}/${end}&details=${details}&location=${location}`;
 }
 
 /* ======= UTILIDADES UI: mostrarMensaje con tipos ======= */
@@ -734,8 +717,8 @@ function renderListaNotificaciones(pendientes) {
     const pagoMensualBadge = lista.pagoMensual ? ' <span style="background:#3b82f6;color:#fff;padding:2px 6px;border-radius:6px;margin-left:8px;font-size:0.8em;">📆 PAGO MENSUAL</span>' : '';
 
     // Reusar tu helper crearGoogleCalendarLink y descargarICS (siempre abrirá con info)
-    const calendarBtnHTML = `<a class="btn-google-calendar" href="#" onclick="(async (e)=>{ e.preventDefault(); const id='${escapeHtml(lista.id)}'; let l = listasCache.get(id); if(!l && navigator.onLine && canUseFirestore()){ try { const d = await getDoc(doc(db,'listas',id)); if(d.exists()) l = { id:d.id, ...d.data() }; } catch(err){ console.warn('No se pudo obtener lista para GC:', err); } } if(!l){ mostrarMensaje('Lista no disponible para agregar al calendario', 'error'); return; } window.open(crearGoogleCalendarLink(l, { allDay: false, hour: ${NOTIFY_HOUR || 9}, durationMinutes: 60 }), '_blank'); })()" style="margin-right:8px;">➕ Añadir a Google Calendar</a>`;
-
+    // Enlaza directamente a Google Calendar usando la versión "por hora" (opción preferente)
+    const calendarBtnHTML = `<a class="btn-google-calendar" href="${crearGoogleCalendarLink(lista, { allDay: false, hour: NOTIFY_HOUR || 9, durationMinutes: 60 })}" target="_blank" rel="noopener noreferrer" style="margin-right:8px;">➕ Añadir a Google Calendar</a>`;
     const icsBtnHTML = `<button type="button" class="btn-download-ics" data-lista-id="${escapeHtml(lista.id)}" style="margin-right:8px;">⬇️ Descargar .ics</button>`;
 
     const resumenHTML = `
@@ -1040,8 +1023,8 @@ function mostrarListasDesdeCache(resetCount=false, soloPendientes=false) {
         const iconoP = p.precio === 0 ? `<i class="fa-solid fa-hourglass-half" title="Precio 0" style="color: #f59e0b;"></i>` : "";
         return `<li>${escapeHtml(p.nombre)} ${iconoP} — $${(p.precio||0).toFixed(2)}${p.descripcion ? ` — ${escapeHtml(p.descripcion)}` : ""}</li>`;
       }).join("");
-      const calendarBtnHTML = `<a class="btn-google-calendar" href="#" onclick="(async (e)=>{ e.preventDefault(); const id='${escapeHtml(lista.id)}'; let l = listasCache.get(id); if(!l && navigator.onLine && canUseFirestore()){ try { const d = await getDoc(doc(db,'listas',id)); if(d.exists()) l = { id:d.id, ...d.data() }; } catch(err){ console.warn('No se pudo obtener lista para GC:', err); } } if(!l){ mostrarMensaje('Lista no disponible para agregar al calendario', 'error'); return; } // Abrir Google Calendar con hora (2h por defecto)
-      window.open(crearGoogleCalendarLink(l, { allDay: false, hour: ${NOTIFY_HOUR || 9}, durationMinutes: 120 }), '_blank'); })()" style="margin-right:8px;">➕ Añadir a Google Calendar</a>`;
+      // Enlaza directamente a Google Calendar usando la versión "por hora" (opción preferente)
+      const calendarBtnHTML = `<a class="btn-google-calendar" href="${crearGoogleCalendarLink(lista, { allDay: false, hour: NOTIFY_HOUR || 9, durationMinutes: 60 })}" target="_blank" rel="noopener noreferrer" style="margin-right:8px;">➕ Añadir a Google Calendar</a>`;
       const icsBtnHTML = `<button type="button" class="btn-download-ics" data-lista-id="${escapeHtml(lista.id)}" style="margin-left:8px;">⬇️ Descargar .ics</button>`;
       ul.innerHTML += `
         <li data-id="${lista.id}">
