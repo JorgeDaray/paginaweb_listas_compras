@@ -12,14 +12,22 @@ body {
 }
 
 /* ================= HEADER / NAV ================= */
-header { text-align: center; margin-bottom: 20px; }
+/* position:relative para anclar el botón hamburguesa correctamente */
+header {
+  text-align: center;
+  margin-bottom: 20px;
+  position: relative;
+}
 h1 { font-size: 1.8rem; color: #1976d2; margin-bottom: 10px; }
 
+/* NAV por defecto (desktop-friendly) */
 nav {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
   gap: 10px;
+  transition: max-height .28s ease, opacity .18s ease;
+  overflow: hidden; /* permite animar apertura en móvil */
 }
 nav button {
   padding: 10px 14px;
@@ -35,9 +43,18 @@ nav button:hover,
 nav button:focus {
   background-color: #1565c0;
   transform: translateY(-2px);
-  outline: none;
   box-shadow: 0 6px 18px rgba(21,101,192,0.12);
 }
+
+/* foco accesible (mejor que outline:none) */
+nav button:focus-visible,
+button:focus-visible,
+#btnMenuToggle:focus-visible {
+  outline: 3px solid rgba(25,118,210,0.18);
+  box-shadow: 0 6px 18px rgba(25,118,210,0.12);
+}
+nav button:focus,
+button:focus { outline: none; }
 
 /* badge pequeño (notificaciones) */
 .badge {
@@ -53,7 +70,7 @@ nav button:focus {
 /* ================= LAYOUT SECCIONES ================= */
 main { margin-top: 10px; }
 .seccion { margin-top: 20px; transition: opacity .25s ease; }
-.oculto { display: none !important; opacity: 0; }
+.oculto { display: none !important; opacity: 0; } /* mantener para ocultar secciones de manera inmediata */
 
 /* títulos */
 h2 { margin-bottom: 12px; font-size: 1.25rem; color: #333; }
@@ -78,7 +95,6 @@ button[type="button"], button[type="submit"] {
 input:focus, textarea:focus, select:focus {
   border-color: #1976d2;
   box-shadow: 0 6px 18px rgba(25,118,210,0.12);
-  outline: none;
 }
 input::placeholder { color: #9aa4b2; }
 
@@ -218,6 +234,15 @@ input::placeholder { color: #9aa4b2; }
   background:#3b82f6; color:#fff; padding:2px 6px; border-radius:6px; font-size:.8rem; margin-left:8px;
 }
 
+/* Footer botones de notificaciones (paginación) */
+.notifs-footer button {
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid #d1d5db;
+  background: #fff;
+  cursor: pointer;
+}
+
 /* contador de resultados (colores de estado) */
 #contadorResultados { margin-top:.5rem; font-weight:700; transition: color .18s ease; }
 #contadorResultados.cero { color: #e53935; }
@@ -244,14 +269,11 @@ input::placeholder { color: #9aa4b2; }
 .mensaje.oculto { opacity: 0; pointer-events: none; visibility: hidden; }
 
 /*======= CSS SUGERIDO para #mensaje (ponlo en tu CSS):*/
-
 #mensaje { padding:8px 12px; border-radius:6px; display:inline-block; transition:opacity .2s; }
 .msg-success { background:#ecfdf5; color:#065f46; border:1px solid #34d399; }
 .msg-offline { background:#fff7ed; color:#7c2d12; border:1px solid #f59e0b; }
 .msg-error { background:#fff1f2; color:#7f1d1d; border:1px solid #ef4444; }
 .msg-info { background:#eff6ff; color:#1e3a8a; border:1px solid #60a5fa; }
-.oculto { opacity:0; pointer-events:none; }
-
 
 /* ================= RESPONSIVE ================= */
 @media (max-width: 600px) {
@@ -261,6 +283,7 @@ input::placeholder { color: #9aa4b2; }
   body { padding: 12px; }
 }
 
+/* Desktop layout */
 @media (min-width: 768px) {
   body {
     display: flex;
@@ -272,14 +295,66 @@ input::placeholder { color: #9aa4b2; }
     flex-direction: column;
     align-items: flex-start;
     height: 100vh;
-    position: sticky;
+    position: static; /* ya no fijo */
     top: 0;
     padding: 20px 15px;
     background-color: #ffffff;
     border-right: 1px solid #eceff1;
     gap: 12px;
+    max-height: none;
+    opacity: 1;
   }
   nav button { width: 100%; font-size: 1rem; }
   main, .seccion { flex: 1; padding: 20px; margin-left: 10px; max-width: 1000px; }
   .mensaje { top: 20px; right: 20px; max-width: 320px; }
+  #btnMenuToggle { display: none; } /* ocultar hamburguesa en desktop */
+}
+
+/* ----- Botón hamburguesa ----- */
+#btnMenuToggle {
+  display: none;
+  border: none;
+  background: transparent;
+  font-size: 1.2rem;
+  padding: 8px;
+  cursor: pointer;
+  color: #1976d2;
+  position: absolute;
+  left: 12px;
+  top: 12px;
+  z-index: 1200;
+}
+
+/* Móvil: nav colapsado por defecto usando max-height (mejor para animación) */
+@media (max-width: 767px) {
+  #btnMenuToggle { display: inline-block; }
+  nav {
+    /* no usamos display:none para poder animar con max-height/opacity */
+    max-height: 0;
+    opacity: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 0 12px;
+  }
+  nav.open {
+    position: fixed;
+    left: 10px;
+    top: 56px;
+    right: 10px;
+    background: #fff;
+    border-radius: 10px;
+    padding: 12px;
+    flex-direction: column;
+    gap: 10px;
+    box-shadow: 0 10px 30px rgba(2,6,23,0.12);
+    z-index: 1200;
+    max-height: 1000px; /* suficiente alto para mostrar contenido */
+    opacity: 1;
+  }
+}
+
+/* si por alguna razón quieres forzar nav visible (empleos especiales), override: */
+@media (min-width: 768px) {
+  nav.open { position: static; max-height: none; opacity: 1; box-shadow: none; }
 }

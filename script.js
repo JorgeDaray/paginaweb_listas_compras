@@ -670,13 +670,12 @@ const NOTIFICATIONS_PAGE_INCREMENT = 5;
 
 function cargarMasNotificaciones() {
   notificacionesMostradasCount += NOTIFICATIONS_PAGE_INCREMENT;
-  // volver a renderizar usando los datos actuales en cache
-  const pendientes = Array.from(listasCache.values()).filter(l => esPendientePorFechaOnly(l));
+  const pendientes = Array.from(listasCache.values()).filter(l => esPendientePorFechaOnly(l) && !l.isEvento);
   renderListaNotificaciones(pendientes);
 }
 function mostrarMenosNotificaciones() {
   notificacionesMostradasCount = NOTIFICATIONS_PAGE_INCREMENT;
-  const pendientes = Array.from(listasCache.values()).filter(l => esPendientePorFechaOnly(l));
+  const pendientes = Array.from(listasCache.values()).filter(l => esPendientePorFechaOnly(l) && !l.isEvento);
   renderListaNotificaciones(pendientes);
 }
 window.cargarMasNotificaciones = cargarMasNotificaciones;
@@ -815,6 +814,47 @@ function renderListaNotificaciones(pendientes) {
   if (footerLi.childElementCount > 0) ul.appendChild(footerLi);
 }
 
+function renderEvents(eventos) {
+  const ul = document.getElementById("listaEventos");
+  if (!ul) return;
+  ul.innerHTML = "";
+  if (!eventos || eventos.length === 0) {
+    const li = document.createElement("li"); li.textContent = "No hay eventos próximos."; ul.appendChild(li); return;
+  }
+  eventos.sort((a,b)=> parseFechaFromString(a.fecha) - parseFechaFromString(b.fecha));
+  eventos.forEach(lista => {
+    const li = document.createElement("li");
+    li.className = "notificacion-item";
+    li.dataset.id = lista.id;
+    const fecha = parseFechaFromString(lista.fecha);
+    const dias = calcularDiasRestantes(fecha);
+    const estadoTexto = dias < 0 ? `Vencida hace ${Math.abs(dias)} día(s)` :
+                       dias === 0 ? "Vence hoy" :
+                       `Vence en ${dias} día(s)`;
+    const total = Array.isArray(lista.productos) ? lista.productos.reduce((s,p)=>s+(p.precio||0),0).toFixed(2) : "0.00";
+
+    li.innerHTML = `
+      <div class="lista-resumen" style="border-left:6px solid #3b82f6; padding-left:8px; background:#eff6ff; border-radius:6px;">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <div>
+            📅 <strong>${formatearFecha(lista.fecha)}</strong> — 🏪 <em>${escapeHtml(lista.lugar)}</em> — 💰 $${total}
+            <div class="texto-estado" style="margin-top:6px;">${estadoTexto}</div>
+          </div>
+          <div>
+            <a class="btn-google-calendar" href="${crearGoogleCalendarLink(lista, { allDay: false, hour: NOTIFY_HOUR || 9, durationMinutes: 60 })}" target="_blank" rel="noopener noreferrer" style="margin-right:8px;">➕ Añadir a Google Calendar</a>
+            <button class="accion-descartar" data-id="${lista.id}">Descartar</button>
+          </div>
+        </div>
+      </div>
+    `;
+    li.querySelectorAll(".accion-descartar").forEach(btn => btn.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      descartarNotificacion(lista.id);
+    }));
+    ul.appendChild(li);
+  });
+}
+
 /* ======= ACTUALIZAR NOTIFICACIONES (usa cache) ======= */
 async function actualizarNotificaciones(listasExternas = null) {
   try {
@@ -847,10 +887,18 @@ async function actualizarNotificaciones(listasExternas = null) {
       } catch(e){ console.error("Error procesando expiradas:", e); }
     }
 
-    const pendientesPorFecha = listas.filter(l => esPendientePorFechaOnly(l));
+    // Separar eventos de notificaciones
+    const pendientesPorFecha = listas.filter(l => esPendientePorFechaOnly(l) && !l.isEvento);
+    const eventosPorFecha = listas.filter(l => esPendientePorFechaOnly(l) && l.isEvento);
+
+    // Renderizar
     renderListaNotificaciones(pendientesPorFecha);
-    // no pedimos permiso al navegador (notificaciones desactivadas)
+    renderEvents(eventosPorFecha);
+
+    // Programar notificaciones (no programar para eventos si no quieres)
     pendientesPorFecha.forEach(lista => scheduleNotificationsForList(lista));
+    // Si quieres también programar recordatorios para eventos, descomenta:
+    eventosPorFecha.forEach(lista => scheduleNotificationsForList(lista));
   } catch(e) { console.error("Error actualizarNotificaciones:", e); }
 }
 
@@ -1230,6 +1278,7 @@ async function editarLista(id) {
     const fechaInputEl = document.getElementById("fecha");
     fechaInputEl.value = lista.fecha ? formatDateToInput(parseFechaFromString(lista.fecha)) : "";
     if (document.getElementById("esPagoMensual")) document.getElementById("esPagoMensual").checked = !!lista.pagoMensual;
+    if (document.getElementById("esEvento")) document.getElementById("esEvento").checked = !!lista.isEvento;
     document.getElementById("idListaEditando").value = id;
     document.getElementById("tituloFormulario").textContent = "Editar Lista de Compras";
     const form = document.getElementById('formLista');
@@ -1296,7 +1345,8 @@ document.getElementById("formLista")?.addEventListener("submit", async (e) => {
   if (hayError || productos.length === 0) return;
   const idLista = document.getElementById("idListaEditando").value;
   const esPagoMensual = !!document.getElementById("esPagoMensual") && document.getElementById("esPagoMensual").checked;
-  const datos = { lugar, fecha: fechaInput, productos, estado, pagoMensual: esPagoMensual };
+  const esEvento = !!document.getElementById("esEvento") && document.getElementById("esEvento").checked;
+  const datos = { lugar, fecha: fechaInput, productos, estado, pagoMensual: esPagoMensual, isEvento: esEvento };
 
   const reactivarCheckbox = document.getElementById('reactivarNotifs');
 
@@ -1641,6 +1691,18 @@ document.addEventListener("DOMContentLoaded", async () => {
       mostrarMensaje("Lista no disponible localmente para generar .ics", "error");
     });
 
+    // inicializar toggle menú (no anidar DOMContentLoaded)
+    const btnMenu = document.getElementById('btnMenuToggle');
+    const navMain = document.getElementById('mainNav');
+    if (btnMenu && navMain) {
+      btnMenu.addEventListener('click', (e) => navMain.classList.toggle('open'));
+      // cerrar nav si se hace click fuera en móvil
+      document.addEventListener('click', (ev) => {
+        const isInside = ev.target.closest && (ev.target.closest('#mainNav') || ev.target.closest('#btnMenuToggle'));
+        if (!isInside && navMain.classList.contains('open')) navMain.classList.remove('open');
+      });
+    }
+
   } catch (e) {
     console.error("Error inicializando la app:", e);
     mostrarMensaje("Error inicializando la aplicación. Revisa la consola para más detalles.", "error");
@@ -1747,7 +1809,14 @@ function descargarICS(lista) {
 }
 
 /* ======= UTILIDADES UI y exportar funciones globales ======= */
-window.mostrarSeccion = function(id){ document.querySelectorAll(".seccion").forEach(s=>s.classList.add("oculto")); const el = document.getElementById(id); if (el) el.classList.remove("oculto"); };
+window.mostrarSeccion = function(id){
+  document.querySelectorAll(".seccion").forEach(s=>s.classList.add("oculto"));
+  const el = document.getElementById(id); if (el) el.classList.remove("oculto");
+
+  // cerrar menú si estaba abierto (UX móvil)
+  const nav = document.getElementById("mainNav");
+  if (nav && nav.classList.contains('open')) nav.classList.remove('open');
+};
 window.agregarProducto = agregarProducto;
 window.eliminarProducto = eliminarProducto;
 window.alternarDetalle = alternarDetalle;

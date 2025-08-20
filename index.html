@@ -12,8 +12,11 @@
 </head>
 <body>
   <header>
+    <button id="btnMenuToggle" aria-label="Abrir menú" title="Menú" aria-controls="mainNav" aria-expanded="false">
+      <i class="fas fa-bars" aria-hidden="true"></i>
+    </button>    
     <h1>Mi Lista de Compras</h1>
-    <nav role="navigation" aria-label="Menú principal">
+    <nav role="navigation" aria-label="Menú principal" id="mainNav">
       <button id="btnAgregar" onclick="mostrarSeccion('agregar')" aria-label="Agregar lista">
         <i class="fas fa-plus-circle" aria-hidden="true"></i> Agregar Lista
       </button>
@@ -25,6 +28,9 @@
       </button>
       <button id="btnNotificaciones" onclick="mostrarSeccion('notificaciones')" aria-label="Notificaciones">
         <i class="fas fa-bell" aria-hidden="true"></i> Notificaciones
+      </button>
+      <button id="btnEventos" onclick="mostrarSeccion('eventos')" aria-label="Eventos">
+        <i class="fas fa-calendar-day" aria-hidden="true"></i> Eventos
       </button>
     </nav>
   </header>  
@@ -40,6 +46,10 @@
           <input type="checkbox" id="esPagoMensual" />
           ¿Es pago mensual?
         </label>
+        <label>
+          <input type="checkbox" id="esEvento" />
+          ¿Es evento?
+        </label>        
         <div id="productos">
           <div class="producto">
             <div class="inputs-container">
@@ -123,7 +133,13 @@
     <section id="notificaciones" class="seccion oculto">
       <h2>🔔 Notificaciones de Pagos</h2>
       <ul id="listaNotificaciones"></ul>
-    </section>    
+    </section>  
+    
+    <!-- Sección Eventos -->
+    <section id="eventos" class="seccion oculto">
+      <h2>📅 Eventos</h2>
+      <ul id="listaEventos"></ul>
+    </section>
   </main>
 
   <div id="mensaje" class="mensaje oculto"></div>
