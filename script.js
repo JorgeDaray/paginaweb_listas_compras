@@ -350,11 +350,11 @@ function sendBrowserNotification(title, body, data = {}) {
 // ===== Helper: crea URL para abrir Google Calendar con datos precargados (por hora) =====
 /**
  * crearGoogleCalendarLink(lista, opts)
- * opts = {
- *   allDay: true|false,        // true = evento todo el día (por defecto), false = evento con hora
- *   hour: 9,                   // hora local de inicio si allDay=false
- *   durationMinutes: 60        // duración si allDay=false
- * }
+ * - allDay: true|false (default true)
+ * - hour: hora local inicio si allDay=false
+ * - durationMinutes: duración si allDay=false
+ *
+ * Devuelve la mejor URL para abrir Google Calendar según plataforma.
  */
 function crearGoogleCalendarLink(lista, opts = { allDay: true, hour: NOTIFY_HOUR || 9, durationMinutes: 60 }) {
   if (!lista || !lista.fecha) return "#";
@@ -363,29 +363,28 @@ function crearGoogleCalendarLink(lista, opts = { allDay: true, hour: NOTIFY_HOUR
 
   const pad = (n) => String(n).padStart(2, "0");
 
-  let start, end;
+  // fechas para params (all-day usa YYYYMMDD/YYYYMMDD; con hora usa timestamps ISO sin separadores + Z)
+  let startParam, endParam;
 
   if (opts.allDay) {
-    // formato YYYYMMDD para all-day (Google acepta este formato)
     const y = fecha.getFullYear();
     const m = pad(fecha.getMonth() + 1);
     const d = pad(fecha.getDate());
-    start = `${y}${m}${d}`;
+    startParam = `${y}${m}${d}`;
     const fechaFin = addDays(fecha, 1);
     const y2 = fechaFin.getFullYear();
     const m2 = pad(fechaFin.getMonth() + 1);
     const d2 = pad(fechaFin.getDate());
-    end = `${y2}${m2}${d2}`;
+    endParam = `${y2}${m2}${d2}`;
   } else {
-    // evento con hora: construiremos timestamps en formato YYYYMMDDTHHMMSSZ (UTC)
     const startDateLocal = new Date(fecha);
     startDateLocal.setHours(opts.hour || NOTIFY_HOUR || 9, 0, 0, 0);
     const endDateLocal = new Date(startDateLocal.getTime() + ((opts.durationMinutes || 60) * 60 * 1000));
 
-    // convertimos a ISO UTC estilo Google: YYYYMMDDTHHMMSSZ
+    // Google acepta formato YYYYMMDDTHHMMSSZ (UTC). Convertimos a UTC ISO con Z.
     const toGCalTs = (dt) => dt.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
-    start = toGCalTs(startDateLocal);
-    end = toGCalTs(endDateLocal);
+    startParam = toGCalTs(startDateLocal);
+    endParam = toGCalTs(endDateLocal);
   }
 
   const title = encodeURIComponent(`Lista: ${lista.lugar || "Compras"}`);
@@ -396,9 +395,21 @@ function crearGoogleCalendarLink(lista, opts = { allDay: true, hour: NOTIFY_HOUR
   );
   const location = encodeURIComponent(lista.lugar || "");
 
-  // la URL para Google Calendar usa el mismo parámetro `dates` tanto para all-day (YYYYMMDD/YYYYMMDD)
-  // como para eventos con hora (YYYYMMDDTHHMMSSZ/YYYYMMDDTHHMMSSZ)
-  return `https://calendar.google.com/calendar/r/eventedit?text=${title}&dates=${start}/${end}&details=${details}&location=${location}`;
+  // Detectar móvil (simpley razonable)
+  const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent || "");
+
+  if (isMobile) {
+    // Mejor compatibilidad en móvil: usar "render?action=TEMPLATE"
+    // params: action=TEMPLATE&text=...&dates=start/end&details=...&location=...
+    return `https://www.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${startParam}/${endParam}&details=${details}&location=${location}`;
+  } else {
+    // Escritorio: usar la URL que ya tenías (abre UI web editable)
+    return `https://calendar.google.com/calendar/r/eventedit?text=${title}&dates=${startParam}/${endParam}&details=${details}&location=${location}`;
+  }
+
+  // Opcional: Android intent fallback (no se usa por defecto, usar sólo si quieres forzar abrir la app)
+  // const intentUrl = `intent://calendar.google.com/calendar/r/eventedit?text=${title}&dates=${startParam}/${endParam}&details=${details}&location=${location}#Intent;package=com.google.android.calendar;scheme=https;end`;
+  // return intentUrl;
 }
 
 /* ======= UTILIDADES UI: mostrarMensaje con tipos ======= */
