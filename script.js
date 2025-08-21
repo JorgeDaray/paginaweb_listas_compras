@@ -1191,7 +1191,7 @@ function classForDiasEventos(dias) {
   // días negativos -> caducado (usar lila oscuro/desaturado)
   if (dias < 0) return 'event-lila-rojo';
   if (dias <= 5) return 'event-lila-rojo';
-  if (dias <= 12) return 'event-lila-ambar';
+  if (dias <= 30) return 'event-lila-ambar';
   return 'event-lila-verde';
 }
 
@@ -1199,7 +1199,7 @@ function classForDiasEventos(dias) {
  * renderEvents(eventos)
  * Renderiza eventos en #listaEventos con paginación, colores según fecha y acciones.
  */
-
+// helper: devuelve clase según días (para escala lila)
 function renderEvents(eventos) {
   const ul = document.getElementById("listaEventos");
   if (!ul) return;
@@ -1214,7 +1214,7 @@ function renderEvents(eventos) {
   }
 
   // ordenar ascendente por fecha
-  eventos.sort((a,b)=> parseFechaFromString(a.fecha) - parseFechaFromString(b.fecha));
+  eventos.sort((a,b) => parseFechaFromString(a.fecha) - parseFechaFromString(b.fecha));
   const total = eventos.length;
   const mostradas = eventos.slice(0, eventosMostradosCount);
 
@@ -1226,35 +1226,42 @@ function renderEvents(eventos) {
     li.className = "notificacion-item";
     li.dataset.id = lista.id;
 
+    // parse fecha y calculos
     const fecha = parseFechaFromString(lista.fecha);
     const dias = calcularDiasRestantes(fecha);
     const hoy = startOfDay(new Date());
     if (!lista.pagoMensual && fecha && startOfDay(fecha).getTime() < hoy.getTime()) {
       lista.estado = 'caducado';
     }
-
     const estadoTexto = lista.estado === 'caducado' ? `Evento caducado` :
-                        dias === 0 ? "Vence hoy" :
-                        dias < 0 ? `Venció hace ${Math.abs(dias)} día(s)` :
-                        `Vence en ${dias} día(s)`;
-
+                       dias === 0 ? "Vence hoy" :
+                       dias < 0 ? `Venció hace ${Math.abs(dias)} día(s)` :
+                       `Vence en ${dias} día(s)`;
     const totalPrecio = Array.isArray(lista.productos) ? lista.productos.reduce((s,p)=>s+(p.precio||0),0).toFixed(2) : "0.00";
-    const colorClass = classForDiasEventos ? classForDiasEventos(dias) : '';
+    const colorsClass = lista.estado === 'caducado' ? 'event-caducado' : classForDiasEventos(dias);
 
-    // Productos render: no mostramos descripción completa en resumen, solo dentro del detalle
-    const productosHTML = (Array.isArray(lista.productos) ? lista.productos : []).map(p => {
-      const iconoP = p.precio === 0 ? `<i class="fa-solid fa-hourglass-half" title="Precio 0" style="color: #f59e0b;"></i>` : "";
-      return `<li>${escapeHtml(p.nombre)} ${iconoP} — $${(p.precio||0).toFixed(2)}</li>`;
-    }).join("");
+    // crear partes de fecha para la caja (día y mes corto)
+    let dayStr = '--';
+    let monthStr = '---';
+    if (fecha && !isNaN(fecha)) {
+      dayStr = String(fecha.getDate());
+      monthStr = fecha.toLocaleString('es-ES', { month: 'short' }).replace(/\./g,'');
+    }
 
-    // Construir HTML minimal (detalle cerrado por defecto)
+    // innerHTML minimalista (detalle oculto por defecto)
     li.innerHTML = `
-      <div class="lista-resumen event-resumen ${colorClass}">
-        <div style="display:flex; gap:12px; align-items:center;">
-          <div style="min-width:140px;">📅 <strong>${formatearFecha(lista.fecha)}</strong></div>
-          <div style="flex:1; color:#374151;">🏪 <em>${escapeHtml(lista.lugar || '')}</em></div>
-          <div style="font-weight:700;">💰 $${totalPrecio}</div>
-          <div style="font-size:0.85rem; color:#6b7280; margin-left:8px;">${estadoTexto}</div>
+      <div class="lista-resumen event-resumen ${colorsClass}" tabindex="0" role="button"
+           aria-expanded="false" aria-controls="detalle-productos-${lista.id}">
+        <div class="date-box" aria-hidden="true">
+          <div class="day">${escapeHtml(dayStr)}</div>
+          <div class="month">${escapeHtml(monthStr)}</div>
+        </div>
+        <div class="event-content">
+          <div style="display:flex; align-items:center; justify-content:space-between; gap:12px;">
+            <div class="event-title">🏪 ${escapeHtml(lista.lugar || '')}</div>
+            <div style="font-weight:700; color:#2b2b38;">💰 $${totalPrecio}</div>
+          </div>
+          <div class="event-meta">${escapeHtml(estadoTexto)}</div>
         </div>
       </div>
 
@@ -1268,19 +1275,49 @@ function renderEvents(eventos) {
             <button class="accion-descartar" data-id="${lista.id}">Descartar</button>
           </div>
         </div>
-        <ul style="margin-top:8px;">${productosHTML || "<li>(sin productos)</li>"}</ul>
+        <ul style="margin-top:8px;">
+          ${(Array.isArray(lista.productos) && lista.productos.length) ? lista.productos.map(p => `<li>${escapeHtml(p.nombre)} — $${(p.precio||0).toFixed(2)}${p.descripcion ? ` — ${escapeHtml(p.descripcion)}` : ''}</li>`).join('') : '<li>(sin productos)</li>'}
+        </ul>
       </div>
     `;
 
-    // Toggle por click en el li (excepto cuando se hace click en botones/enlaces dentro)
-    li.addEventListener("click", (e) => {
-      // si el click vino de un button o enlace, no toggles
+    // referencias a elementos recién creados
+    const resumenEl = li.querySelector('.event-resumen');
+    const detalleEl = li.querySelector(`#detalle-productos-${lista.id}`);
+
+    // Helper para togglear detalle y actualizar aria-expanded
+    const toggleDetalle = (opts = {}) => {
+      if (!detalleEl) return;
+      // si opts.force === true -> abrir, if force === false -> cerrar, else toggle
+      let opened;
+      if (typeof opts.force === 'boolean') {
+        if (opts.force) detalleEl.classList.remove('oculto');
+        else detalleEl.classList.add('oculto');
+        opened = !detalleEl.classList.contains('oculto');
+      } else {
+        const toggledClosed = detalleEl.classList.toggle('oculto'); // true => ahora tiene clase oculto
+        opened = !toggledClosed;
+      }
+      if (resumenEl) resumenEl.setAttribute('aria-expanded', String(opened));
+    };
+
+    // Click en la tarjeta: toggle, salvo que el click sea en un botón/enlace interno
+    resumenEl.addEventListener('click', (e) => {
       if (e.target.closest('button') || e.target.closest('a')) return;
-      const det = document.getElementById(`detalle-productos-${lista.id}`);
-      if (det) det.classList.toggle('oculto');
+      toggleDetalle();
     });
 
-    // eventos de los botones dentro del li
+    // Soporte teclado: Enter / Space para abrir/cerrar (accesible)
+    resumenEl.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        // si el foco está en un control interno, no interferir
+        if (e.target.closest('button') || e.target.closest('a')) return;
+        e.preventDefault();
+        toggleDetalle();
+      }
+    });
+
+    // Botones internos (marcar / descartar / ics)
     li.querySelectorAll(".accion-marcar").forEach(btn => btn.addEventListener("click", async (ev) => {
       ev.stopPropagation();
       const id = btn.dataset.id;
@@ -1295,8 +1332,6 @@ function renderEvents(eventos) {
       if (!ok) return;
       await descartarNotificacion(id);
     }));
-
-    // descarga .ics
     li.querySelectorAll(".btn-download-ics").forEach(btn => btn.addEventListener("click", (ev) => {
       ev.stopPropagation();
       const id = btn.getAttribute('data-lista-id');
@@ -1333,7 +1368,7 @@ function renderEvents(eventos) {
   }
 
   if (footerLi.childElementCount > 0) ul.appendChild(footerLi);
-}  
+}
 
 /* ======= ACCIONES: marcar hecha / descartar (usar cache y getDoc fallback) ======= */
 async function marcarListaComoHecha(id) {

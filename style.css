@@ -384,53 +384,125 @@ input::placeholder { color: #9aa4b2; }
 /* Resumen notifs */
 #notifsSummaryContainer > div { margin-bottom: 6px; }
 
-/* ================= EVENTOS - paleta lila, estilo minimalista ================= */
+/* ===========================
+   EVENTOS - paleta lila (minimal, canonical)
+   =========================== */
+
 .event-resumen {
-  padding: 10px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px;
+  border-radius: 10px;
+  background: #fff;
+  border: 1px solid #f0eef9;
+  box-shadow: 0 2px 8px rgba(15,23,42,0.04);
+  cursor: pointer;
+  transition: transform .12s ease, box-shadow .12s ease;
+  border-left: 6px solid transparent; /* siempre presente para que variantes puedan sobrescribir */
+}
+
+.event-resumen:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 22px rgba(15,23,42,0.08);
+}
+
+/* caja con fecha cuadrada */
+.event-resumen .date-box {
+  min-width: 64px;
+  min-height: 64px;
+  width: 64px;
+  height: 64px;
   border-radius: 8px;
   display: flex;
-  justify-content: space-between;
+  flex-direction: column;
   align-items: center;
-  gap: 8px;
-  font-weight: 600;
-  color: #2b2b2b;
-  box-shadow: none;
-  border-left-width: 6px;
-}
-
-.event-resumen .texto-estado {
-  font-weight: 500;
-  font-size: 0.88rem;
-  color: #4b5563;
-}
-
-/* Tonos lila en función de urgencia (cambio respecto a pagos) */
-.event-lila-rojo { background: #fff6fb; border-left-color: #cfb8ec; }   /* muy urgente / cercano */
-.event-lila-ambar { background: #fbf5ff; border-left-color: #8959db; }  /* medio */
-.event-lila-verde { background: #f8f7ff; border-left-color: #5500dd; } /* lejano */
-
-/* botón pequeño "Ver" minimal */
-.toggle-mas-productos,
-.toggle-productos-extra {
-  padding: 6px 10px;
-  background: transparent;
-  border: 1px solid #e6e9ef;
-  border-radius: 8px;
-  cursor: pointer;
+  justify-content: center;
   font-weight: 700;
+  line-height: 1;
+  text-align: center;
+  flex-shrink: 0;
 }
 
-/* Detalles ocultos por defecto */
+/* day / month styling */
+.date-box .day { font-size: 1.35rem; }
+.date-box .month { font-size: .75rem; text-transform: uppercase; opacity: .9; margin-top: 2px; }
+
+/* content area to the right */
+.event-resumen .event-content {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+.event-resumen .event-title {
+  font-weight: 700;
+  color: #2b2b38;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.event-resumen .event-meta {
+  color: #6b7280;
+  font-size: .9rem;
+}
+
+/* detalle (cerrado por defecto) */
+.detalle-productos { margin-top: 8px; }
 .detalle-productos.oculto { display: none; }
 
-/* Productos extra ocultos */
-.producto-extra.oculto { display: none; }
+/* = variants (aseguramos border-left sólido) */
 
-/* menús y listas más compactas */
-.lista-item, .notificacion-item {
-  padding: 10px;
-  border-radius: 8px;
+/* muy urgente / cercano */
+.event-lila-rojo {
+  background: linear-gradient(180deg,#fff6fb,#fff0fb);
+  color: #3b0f4a;
+  border-left: 6px solid #af5bd7;
+}
+.event-lila-rojo .date-box {
+  background: linear-gradient(180deg,#f9eefb,#f3e6fa);
+  color: #c54626;
 }
 
-/* reducir volumen visual de los listados (minimal) */
-.lista-resumen { box-shadow: none; border: 1px solid transparent; padding: 8px; }
+/* medio */
+.event-lila-ambar {
+  background: linear-gradient(180deg,#fbf8ff,#f6f1ff);
+  color: #2f1a4d;
+  border-left: 6px solid #8b5cf6;
+}
+.event-lila-ambar .date-box {
+  background: linear-gradient(180deg,#f3e8ff,#e9d5ff);
+  color: #b9b71f;
+}
+
+/* lejano */
+.event-lila-verde {
+  background: linear-gradient(180deg,#f8f7ff,#f4f3ff);
+  color: #22183f;
+  border-left: 6px solid #5b21b6;
+}
+.event-lila-verde .date-box {
+  background: linear-gradient(180deg,#f6f3ff,#efecff);
+  color: #419927;
+}
+
+/* caducado */
+.event-caducado {
+  opacity: 0.85;
+  filter: grayscale(.08);
+  border-left: 6px solid #cbd5e1;
+}
+.event-caducado .date-box {
+  background: linear-gradient(180deg,#f3f4f6,#eceff6);
+  color: #6b7280;
+}
+
+/* ocultar mini-desc en resumen */
+.event-resumen .mini-desc { display: none; }
+
+/* responsive */
+@media (max-width: 600px) {
+  .event-resumen { gap: 10px; padding: 10px; }
+  .date-box { width: 56px; height: 56px; }
+}
