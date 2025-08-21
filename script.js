@@ -245,6 +245,25 @@ function canUseFirestore() {
   return !!(firebaseLoaded && db && typeof addDoc === "function" && typeof getDoc === "function" && typeof updateDoc === "function");
 }
 
+/* =========================
+  toggleProductosExtra helper
+  ========================= */
+function toggleProductosExtra(listaId, buttonEl) {
+  const ul = document.getElementById(`product-list-${listaId}`);
+  if (!ul) return;
+  const extras = ul.querySelectorAll('.producto-extra');
+  if (!extras || extras.length === 0) return;
+  const anyHidden = Array.from(extras).some(el => el.classList.contains('oculto'));
+  extras.forEach(el => {
+    if (anyHidden) el.classList.remove('oculto'); else el.classList.add('oculto');
+  });
+  if (anyHidden) {
+    buttonEl.textContent = 'Mostrar menos';
+  } else {
+    buttonEl.textContent = `Ver ${extras.length} más`;
+  }
+} 
+
 // Máximo que acepta setTimeout en ms (2^31-1)
 const MAX_TIMEOUT_MS = 2147483647;
 
@@ -635,7 +654,15 @@ async function advanceMonthlyList(lista) {
 }
 
 /* ======= RENDER: Notificaciones y lista (usando cache) ======= */
+// Wrapper para mantener compatibilidad con llamadas anteriores
 function renderBadge(count) {
+  // si tienes renderMenuBadge definida, úsala
+  if (typeof renderMenuBadge === 'function') {
+    renderMenuBadge(count, 'notifs');
+    return;
+  }
+
+  // fallback: comportamiento antiguo (buscar botón con fa-bell)
   const navButtons = document.querySelectorAll("header nav button");
   let bellBtn = null;
   navButtons.forEach(b => { if (b.innerHTML.includes("fa-bell")) bellBtn = b; });
@@ -663,6 +690,253 @@ function colorForDias(dias) {
   if (dias <= 10) return { border: "#f59e0b", bg: "#fff7ed" };
   return { border: "#10b981", bg: "#f0fdf4" };
 }
+
+/* ------------------ HELPERS FECHAS ADICIONALES ------------------ */
+function startOfMonth(d) {
+  const dt = new Date(d.getFullYear(), d.getMonth(), 1);
+  return startOfDay(dt);
+}
+function endOfMonth(d) {
+  // último día del mes a las 00:00
+  const dt = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+  return startOfDay(dt);
+}
+
+function updateListCountDisplay(filteredTotal, totalStored) {
+  const contenedorPadre = document.getElementById("verListas");
+  if (!contenedorPadre) return;
+  let cont = document.getElementById("contadorListasTotales");
+  if (!cont) {
+    cont = document.createElement("div");
+    cont.id = "contadorListasTotales";
+    cont.style.marginBottom = "8px";
+    cont.style.fontWeight = "700";
+    cont.style.color = "#374151";
+    const ul = document.getElementById("todasLasListas");
+    if (ul) contenedorPadre.insertBefore(cont, ul);
+    else contenedorPadre.prepend(cont);
+  }
+  cont.innerHTML = `Mostrando <strong>${filteredTotal}</strong> de <strong>${totalStored}</strong> listas guardadas.`;
+}
+
+/* ================= FILTRO Y CÁLCULO: Notificaciones hasta una fecha ================= */
+
+// key localStorage para persistir el filtro
+const NOTIFS_FILTER_KEY = 'notifsFilterEndDate';
+
+// Obtiene la fecha final del filtro (Date) si está definida, o null
+function getNotifsFilterEndDate() {
+  const v = localStorage.getItem(NOTIFS_FILTER_KEY);
+  if (!v) return null;
+  const d = new Date(v + "T00:00:00");
+  if (isNaN(d)) return null;
+  return startOfDay(d);
+}
+
+// Guarda (o limpia) el filtro
+function setNotifsFilterEndDate(dateStrOrNull) {
+  if (!dateStrOrNull) {
+    localStorage.removeItem(NOTIFS_FILTER_KEY);
+  } else {
+    localStorage.setItem(NOTIFS_FILTER_KEY, dateStrOrNull);
+  }
+}
+
+// Formatea un Date -> "yyyy-mm-dd" para inputs (útil)
+function formatDateForInput(d) {
+  if (!d) return '';
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+/**
+ * computeTotalsUntil(endDate):
+ *  - suma todas las listas (no completadas, no descartadas) cuya fecha esté entre hoy y endDate inclusive.
+ *  - devuelve objeto { totalAll, totalMensual, items }
+ */
+function computeTotalsUntil(endDate) {
+  const hoy = startOfDay(new Date());
+  const end = startOfDay(endDate);
+  let totalAll = 0;
+  let totalMensual = 0;
+  const items = [];
+
+  for (const l of Array.from(listasCache.values())) {
+    try {
+      if (!l || !l.fecha) continue;
+      if (l.completada) continue;
+      if (l._notificacionDescartada) continue;
+
+      const f = parseFechaFromString(l.fecha);
+      if (!f || isNaN(f)) continue;
+      const fd = startOfDay(f);
+      if (fd.getTime() >= hoy.getTime() && fd.getTime() <= end.getTime()) {
+        const listaTotal = Array.isArray(l.productos) ? l.productos.reduce((s,p)=> s + (Number(p.precio)||0), 0) : 0;
+        totalAll += listaTotal;
+        if (l.pagoMensual) totalMensual += listaTotal;
+        items.push({ id: l.id, fecha: fd, lugar: l.lugar || '', total: listaTotal, pagoMensual: !!l.pagoMensual });
+      }
+    } catch(e){ console.error("computeTotalsUntil item error:", e); }
+  }
+
+  totalAll = Math.round(totalAll * 100) / 100;
+  totalMensual = Math.round(totalMensual * 100) / 100;
+  // ordenar items por fecha asc
+  items.sort((a,b)=> a.fecha - b.fecha);
+  return { totalAll, totalMensual, items };
+}
+
+/**
+ * updateNotifsSummaryWithFilter(endDateOrNull)
+ *   - si endDateOrNull === null -> oculta o muestra resumen por defecto (puedes mostrar resumen por mes si lo prefieres)
+ *   - si date dado: calcula totales desde hoy hasta esa fecha y renderiza resumen + botón detalle
+ */
+function ensureNotifsSummaryContainer() {
+  let container = document.getElementById("notifsSummaryContainer");
+  const parent = document.getElementById("notificaciones");
+  if (!parent) return null;
+  if (!container) {
+    container = document.createElement("div");
+    container.id = "notifsSummaryContainer";
+    container.style.marginBottom = "10px";
+    parent.insertBefore(container, document.getElementById("listaNotificaciones"));
+  }
+  return container;
+}
+
+function updateNotifsSummaryWithFilter(endDateOrNull) {
+  const container = ensureNotifsSummaryContainer();
+  if (!container) return;
+  container.innerHTML = "";
+
+  if (!endDateOrNull) {
+    // Si no hay filtro, no mostramos resumen (quitar cualquier contenido previo)
+    return;
+  }
+
+  const { totalAll, totalMensual, items } = computeTotalsUntil(endDateOrNull);
+  const startStr = formatearFecha(startOfDay(new Date()));
+  const endStr = formatearFecha(endDateOrNull);
+
+  const div = document.createElement("div");
+  div.style.padding = "10px";
+  div.style.border = "1px solid #e6e9ef";
+  div.style.borderRadius = "8px";
+  div.style.background = "#fff";
+  div.style.display = "flex";
+  div.style.justifyContent = "space-between";
+  div.style.alignItems = "center";
+  div.style.gap = "12px";
+
+  div.innerHTML = `
+    <div style="font-weight:700; color:#111;">
+      <div>Periodo: <small style="font-weight:600; color:#444;">${startStr} — ${endStr}</small></div>
+      <div style="margin-top:6px;">Total estimado a pagar (período): <strong>$${totalAll.toFixed(2)}</strong></div>
+      <div style="font-size:0.9em; color:#374151; margin-top:4px;">Pagos mensuales incluidos: <strong>$${totalMensual.toFixed(2)}</strong></div>
+    </div>
+    <div style="text-align:right;">
+      <button id="btnDetallePagosFiltro" style="padding:6px 10px; border-radius:8px; border:1px solid #e6e9ef; background:#f8fafc; cursor:pointer; font-weight:700;">Ver listado (${items.length})</button>
+    </div>
+  `;
+  container.appendChild(div);
+
+  const btnDetalle = document.getElementById("btnDetallePagosFiltro");
+  if (btnDetalle) {
+    btnDetalle.onclick = () => {
+      if (!items || items.length === 0) return mostrarMensaje("No hay pagos en el período seleccionado.", "info");
+      const lines = items.map(it => `${formatearFecha(it.fecha)} — ${escapeHtml(it.lugar)} — $${it.total.toFixed(2)}${it.pagoMensual ? ' (mensual)' : ''}`);
+      alert(`Pagos entre ${startStr} y ${endStr}:\n\n${lines.join('\n')}`);
+    };
+  }
+}
+
+/* ========== Integración con UI de filtro ========== */
+function setupNotifsFilterUI() {
+  const input = document.getElementById("notifsFilterDate");
+  const btnApply = document.getElementById("btnApplyNotifsFilter");
+  const btnClear = document.getElementById("btnClearNotifsFilter");
+
+  if (!input || !btnApply || !btnClear) return;
+
+  // inicializar input con valor guardado o valor por defecto (por ejemplo fin de mes + 3 días)
+  const saved = getNotifsFilterEndDate();
+  if (saved) {
+    input.value = formatDateForInput(saved);
+  } else {
+   // inicializar input con valor guardado (si lo hay). NO colocar valor por defecto.
+    const saved = getNotifsFilterEndDate();
+    if (saved) {
+      input.value = formatDateForInput(saved);
+    } else {
+      input.value = ""; // dejar vacío para que el usuario elija
+    }
+  }
+
+  btnApply.addEventListener('click', (e) => {
+    e.preventDefault();
+    const val = input.value;
+    if (!val) {
+      mostrarMensaje("Selecciona una fecha válida para aplicar el filtro.", "error");
+      return;
+    }
+    const chosen = new Date(val + "T00:00:00");
+    if (isNaN(chosen)) {
+      mostrarMensaje("Fecha inválida.", "error");
+      return;
+    }
+    const today = startOfDay(new Date());
+    if (startOfDay(chosen).getTime() < today.getTime()) {
+      mostrarMensaje("La fecha de filtro debe ser hoy o una fecha futura.", "error");
+      return;
+    }
+
+    // guardar filtro y aplicar: actualiza summary y lista de notificaciones
+    setNotifsFilterEndDate(val);
+    applyNotifsFilterAndRender();
+    mostrarMensaje("Filtro aplicado.", "success");
+  });
+
+  btnClear.addEventListener('click', (e) => {
+    e.preventDefault();
+    setNotifsFilterEndDate(null);
+    input.value = ""; // deja vacío para que el usuario elija
+    applyNotifsFilterAndRender();
+    mostrarMensaje("Filtro limpiado.", "info");
+  });
+}
+
+// Esta función aplica el filtro en memoria y manda a renderizar lista + summary
+function applyNotifsFilterAndRender() {
+  const endDate = getNotifsFilterEndDate(); // Date | null
+  // obtenemos pendientes (por defecto sin eventos) y filtramos por ventana original + filtro final
+  let pendientes = Array.from(listasCache.values()).filter(l => esPendientePorFechaOnly(l) && !l.isEvento);
+
+  if (endDate) {
+    // filtrar por fecha <= endDate
+    pendientes = pendientes.filter(l => {
+      const f = parseFechaFromString(l.fecha);
+      if (!f) return false;
+      return startOfDay(f).getTime() <= startOfDay(endDate).getTime();
+    });
+    // render lista usando las pendientes ya filtradas
+    renderListaNotificaciones(pendientes);
+    updateNotifsSummaryWithFilter(endDate);
+    // actualizar badge con el total original (no solo mostradas) o con el total filtrado según prefieras
+    renderBadge(pendientes.length);
+  } else {
+    // sin filtro: usa comportamiento por defecto (paginado dentro de renderListaNotificaciones)
+    const pendientesDefault = Array.from(listasCache.values()).filter(l => esPendientePorFechaOnly(l) && !l.isEvento);
+    // restauramos el contador inicial y se deja que renderListaNotificaciones pagine
+    notificacionesMostradasCount = NOTIFICATIONS_PAGE_INCREMENT; // opcional
+    renderListaNotificaciones(pendientesDefault);
+    updateNotifsSummaryWithFilter(null);
+    renderBadge(pendientesDefault.length);
+  }
+}
+
+// Llamar setupNotifsFilterUI() desde DOMContentLoaded (ya tienes la rutina init): 
 
 // --------- Paginación para la lista de notificaciones (mostrar 5 en vez de todas) ----------
 let notificacionesMostradasCount = 5; // cuántas notificaciones mostrar inicialmente
@@ -696,7 +970,7 @@ function renderListaNotificaciones(pendientes) {
   }
 
   // orden y conteo total
-  pendientes.sort((a,b)=> new Date(a.fecha) - new Date(b.fecha));
+  pendientes.sort((a,b)=> parseFechaFromString(a.fecha) - parseFechaFromString(b.fecha));
   const totalCount = pendientes.length;
 
   // slice para paginación
@@ -764,8 +1038,14 @@ function renderListaNotificaciones(pendientes) {
       if (e.target && (e.target.matches("button") || e.target.closest("button") || e.target.closest("a.btn-google-calendar"))) return;
       const panelAcc = li.querySelector(`#acciones-${lista.id}`);
       const panelProd = li.querySelector(`#detalle-productos-${lista.id}`);
-      if (panelProd) panelProd.classList.toggle("oculto");
-      if (panelAcc) panelAcc.classList.toggle("oculto");
+      if (panelProd) {
+        const abierto = panelProd.classList.toggle("oculto");
+        panelProd.setAttribute('aria-hidden', abierto ? 'true' : 'false');
+      }
+      if (panelAcc) {
+        const abierto = panelAcc.classList.toggle("oculto");
+        panelAcc.setAttribute('aria-hidden', abierto ? 'true' : 'false');
+      }     
     });
 
     // eventos para marcar/descartar
@@ -814,47 +1094,6 @@ function renderListaNotificaciones(pendientes) {
   if (footerLi.childElementCount > 0) ul.appendChild(footerLi);
 }
 
-function renderEvents(eventos) {
-  const ul = document.getElementById("listaEventos");
-  if (!ul) return;
-  ul.innerHTML = "";
-  if (!eventos || eventos.length === 0) {
-    const li = document.createElement("li"); li.textContent = "No hay eventos próximos."; ul.appendChild(li); return;
-  }
-  eventos.sort((a,b)=> parseFechaFromString(a.fecha) - parseFechaFromString(b.fecha));
-  eventos.forEach(lista => {
-    const li = document.createElement("li");
-    li.className = "notificacion-item";
-    li.dataset.id = lista.id;
-    const fecha = parseFechaFromString(lista.fecha);
-    const dias = calcularDiasRestantes(fecha);
-    const estadoTexto = dias < 0 ? `Vencida hace ${Math.abs(dias)} día(s)` :
-                       dias === 0 ? "Vence hoy" :
-                       `Vence en ${dias} día(s)`;
-    const total = Array.isArray(lista.productos) ? lista.productos.reduce((s,p)=>s+(p.precio||0),0).toFixed(2) : "0.00";
-
-    li.innerHTML = `
-      <div class="lista-resumen" style="border-left:6px solid #3b82f6; padding-left:8px; background:#eff6ff; border-radius:6px;">
-        <div style="display:flex; justify-content:space-between; align-items:center;">
-          <div>
-            📅 <strong>${formatearFecha(lista.fecha)}</strong> — 🏪 <em>${escapeHtml(lista.lugar)}</em> — 💰 $${total}
-            <div class="texto-estado" style="margin-top:6px;">${estadoTexto}</div>
-          </div>
-          <div>
-            <a class="btn-google-calendar" href="${crearGoogleCalendarLink(lista, { allDay: false, hour: NOTIFY_HOUR || 9, durationMinutes: 60 })}" target="_blank" rel="noopener noreferrer" style="margin-right:8px;">➕ Añadir a Google Calendar</a>
-            <button class="accion-descartar" data-id="${lista.id}">Descartar</button>
-          </div>
-        </div>
-      </div>
-    `;
-    li.querySelectorAll(".accion-descartar").forEach(btn => btn.addEventListener("click", (ev) => {
-      ev.stopPropagation();
-      descartarNotificacion(lista.id);
-    }));
-    ul.appendChild(li);
-  });
-}
-
 /* ======= ACTUALIZAR NOTIFICACIONES (usa cache) ======= */
 async function actualizarNotificaciones(listasExternas = null) {
   try {
@@ -867,40 +1106,234 @@ async function actualizarNotificaciones(listasExternas = null) {
       if (!listas || listas.length === 0) listas = [];
     }
 
-    // marcar expiradas si aplica
+    // marcar expiradas / caducadas si aplica
     const hoy = startOfDay(new Date());
     for (const l of listas) {
       try {
         const f = parseFechaFromString(l.fecha);
-        if (!l.pagoMensual && l.estado === 'pendiente' && f && startOfDay(f).getTime() < hoy.getTime()) {
-          l.estado = 'expirada';
-          if (navigator.onLine && canUseFirestore()) {
-            try { await updateDoc(doc(db, 'listas', l.id), { estado: 'expirada' }); }
-            catch(err){ console.error("No se pudo marcar expirada en servidor:", err); }
+        if (!l.pagoMensual && f && startOfDay(f).getTime() < hoy.getTime()) {
+          // si es evento: marcar como 'caducado', si no evento usar 'expirada' (compatibilidad)
+          if (l.isEvento) {
+            l.estado = 'caducado';
           } else {
-            try {
-              listasCache.set(l.id, { ...l, estado: 'expirada' });
-              await schedulePersistCacheToIndexedDB();
-            } catch(e){ /* ignore */ }
+            l.estado = 'expirada';
+          }
+          if (navigator.onLine && canUseFirestore()) {
+            try { await updateDoc(doc(db, 'listas', l.id), { estado: l.estado }); }
+            catch(err){ console.error("No se pudo marcar expirada/caducada en servidor:", err); }
+          } else {
+            listasCache.set(l.id, { ...l, estado: l.estado });
+            await schedulePersistCacheToIndexedDB().catch(()=>{});
           }
         }
       } catch(e){ console.error("Error procesando expiradas:", e); }
     }
 
-    // Separar eventos de notificaciones
+    // Separar notificaciones normales de eventos
     const pendientesPorFecha = listas.filter(l => esPendientePorFechaOnly(l) && !l.isEvento);
     const eventosPorFecha = listas.filter(l => esPendientePorFechaOnly(l) && l.isEvento);
 
     // Renderizar
-    renderListaNotificaciones(pendientesPorFecha);
+    renderListaNotificaciones(pendientesPorFecha); // tu función existente (paginada)
     renderEvents(eventosPorFecha);
+    // ahora solo aplicamos el filtro (si existe) o limpiamos el resumen
+    applyNotifsFilterAndRender();
 
-    // Programar notificaciones (no programar para eventos si no quieres)
+    // Programar notificaciones (si quieres que eventos tengan recordatorios también)
     pendientesPorFecha.forEach(lista => scheduleNotificationsForList(lista));
-    // Si quieres también programar recordatorios para eventos, descomenta:
-    eventosPorFecha.forEach(lista => scheduleNotificationsForList(lista));
+    eventosPorFecha.forEach(lista => scheduleNotificationsForList(lista)); // opcional
+
+    // actualizar badges (ya lo hace renderMenuBadge dentro de las funciones)
+    // para seguridad: aseguramos que el badge de notifs también esté actualizado con total
+    renderMenuBadge(pendientesPorFecha.length, 'notifs');
+
   } catch(e) { console.error("Error actualizarNotificaciones:", e); }
 }
+
+/* -------------------- PAGINACIÓN Y RENDER PARA EVENTOS -------------------- */
+let eventosMostradosCount = 5;
+const EVENTS_PAGE_INCREMENT = 5;
+
+function cargarMasEventos() {
+  eventosMostradosCount += EVENTS_PAGE_INCREMENT;
+  const eventos = Array.from(listasCache.values()).filter(l => esPendientePorFechaOnly(l) && l.isEvento);
+  renderEvents(eventos);
+}
+function mostrarMenosEventos() {
+  eventosMostradosCount = EVENTS_PAGE_INCREMENT;
+  const eventos = Array.from(listasCache.values()).filter(l => esPendientePorFechaOnly(l) && l.isEvento);
+  renderEvents(eventos);
+}
+window.cargarMasEventos = cargarMasEventos;
+window.mostrarMenosEventos = mostrarMenosEventos;
+
+/**
+ * renderBadge actualizado: ahora soporta 'notifs' y 'events' (usa id de botones si existen)
+ */
+function renderMenuBadge(count, type = 'notifs') {
+  // type 'notifs' => btnNotificaciones, 'events' => btnEventos
+  const btnId = type === 'events' ? 'btnEventos' : 'btnNotificaciones';
+  const btn = document.getElementById(btnId);
+  if (!btn) return;
+  const existing = btn.querySelector(".badge");
+  if (existing) existing.remove();
+  if (count > 0) {
+    const span = document.createElement("span");
+    span.className = "badge";
+    span.textContent = count > 99 ? "99+" : String(count);
+    span.style.cssText = "background:#e53e3e;color:#fff;padding:2px 6px;border-radius:999px;margin-left:8px;font-size:0.8em;";
+    btn.appendChild(span);
+  }
+}
+
+// Nueva paleta lila para eventos (devuelve clase CSS)
+function classForDiasEventos(dias) {
+  // días negativos -> caducado (usar lila oscuro/desaturado)
+  if (dias < 0) return 'event-lila-rojo';
+  if (dias <= 5) return 'event-lila-rojo';
+  if (dias <= 12) return 'event-lila-ambar';
+  return 'event-lila-verde';
+}
+
+/**
+ * renderEvents(eventos)
+ * Renderiza eventos en #listaEventos con paginación, colores según fecha y acciones.
+ */
+
+function renderEvents(eventos) {
+  const ul = document.getElementById("listaEventos");
+  if (!ul) return;
+  ul.innerHTML = "";
+
+  if (!eventos || eventos.length === 0) {
+    const li = document.createElement("li");
+    li.textContent = "No hay eventos próximos.";
+    ul.appendChild(li);
+    renderMenuBadge(0, 'events');
+    return;
+  }
+
+  // ordenar ascendente por fecha
+  eventos.sort((a,b)=> parseFechaFromString(a.fecha) - parseFechaFromString(b.fecha));
+  const total = eventos.length;
+  const mostradas = eventos.slice(0, eventosMostradosCount);
+
+  // badge del menú debe reflejar total
+  renderMenuBadge(total, 'events');
+
+  mostradas.forEach(lista => {
+    const li = document.createElement("li");
+    li.className = "notificacion-item";
+    li.dataset.id = lista.id;
+
+    const fecha = parseFechaFromString(lista.fecha);
+    const dias = calcularDiasRestantes(fecha);
+    const hoy = startOfDay(new Date());
+    if (!lista.pagoMensual && fecha && startOfDay(fecha).getTime() < hoy.getTime()) {
+      lista.estado = 'caducado';
+    }
+
+    const estadoTexto = lista.estado === 'caducado' ? `Evento caducado` :
+                        dias === 0 ? "Vence hoy" :
+                        dias < 0 ? `Venció hace ${Math.abs(dias)} día(s)` :
+                        `Vence en ${dias} día(s)`;
+
+    const totalPrecio = Array.isArray(lista.productos) ? lista.productos.reduce((s,p)=>s+(p.precio||0),0).toFixed(2) : "0.00";
+    const colorClass = classForDiasEventos ? classForDiasEventos(dias) : '';
+
+    // Productos render: no mostramos descripción completa en resumen, solo dentro del detalle
+    const productosHTML = (Array.isArray(lista.productos) ? lista.productos : []).map(p => {
+      const iconoP = p.precio === 0 ? `<i class="fa-solid fa-hourglass-half" title="Precio 0" style="color: #f59e0b;"></i>` : "";
+      return `<li>${escapeHtml(p.nombre)} ${iconoP} — $${(p.precio||0).toFixed(2)}</li>`;
+    }).join("");
+
+    // Construir HTML minimal (detalle cerrado por defecto)
+    li.innerHTML = `
+      <div class="lista-resumen event-resumen ${colorClass}">
+        <div style="display:flex; gap:12px; align-items:center;">
+          <div style="min-width:140px;">📅 <strong>${formatearFecha(lista.fecha)}</strong></div>
+          <div style="flex:1; color:#374151;">🏪 <em>${escapeHtml(lista.lugar || '')}</em></div>
+          <div style="font-weight:700;">💰 $${totalPrecio}</div>
+          <div style="font-size:0.85rem; color:#6b7280; margin-left:8px;">${estadoTexto}</div>
+        </div>
+      </div>
+
+      <div class="detalle-productos oculto" id="detalle-productos-${lista.id}" style="margin-top:8px; padding:10px; border-radius:6px; border:1px solid #eee; background:#fff;">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <div style="font-weight:700;">Productos (${(lista.productos||[]).length})</div>
+          <div>
+            <a class="btn-google-calendar" href="${crearGoogleCalendarLink(lista, { allDay: false, hour: NOTIFY_HOUR || 9, durationMinutes: 60 })}" target="_blank" rel="noopener noreferrer" style="margin-right:8px;">➕ Añadir</a>
+            <button class="btn-download-ics" data-lista-id="${escapeHtml(lista.id)}" style="margin-right:8px;">⬇️ .ics</button>
+            <button class="accion-marcar" data-id="${lista.id}" style="margin-right:6px;">Hecho</button>
+            <button class="accion-descartar" data-id="${lista.id}">Descartar</button>
+          </div>
+        </div>
+        <ul style="margin-top:8px;">${productosHTML || "<li>(sin productos)</li>"}</ul>
+      </div>
+    `;
+
+    // Toggle por click en el li (excepto cuando se hace click en botones/enlaces dentro)
+    li.addEventListener("click", (e) => {
+      // si el click vino de un button o enlace, no toggles
+      if (e.target.closest('button') || e.target.closest('a')) return;
+      const det = document.getElementById(`detalle-productos-${lista.id}`);
+      if (det) det.classList.toggle('oculto');
+    });
+
+    // eventos de los botones dentro del li
+    li.querySelectorAll(".accion-marcar").forEach(btn => btn.addEventListener("click", async (ev) => {
+      ev.stopPropagation();
+      const id = btn.dataset.id;
+      const ok = confirm("¿Confirmas que deseas marcar este evento como hecho?");
+      if (!ok) return;
+      await marcarListaComoHecha(id);
+    }));
+    li.querySelectorAll(".accion-descartar").forEach(btn => btn.addEventListener("click", async (ev) => {
+      ev.stopPropagation();
+      const id = btn.dataset.id;
+      const ok = confirm("¿Deseas descartar este evento? Podrás reactivarlo editando la lista.");
+      if (!ok) return;
+      await descartarNotificacion(id);
+    }));
+
+    // descarga .ics
+    li.querySelectorAll(".btn-download-ics").forEach(btn => btn.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      const id = btn.getAttribute('data-lista-id');
+      const listaCache = listasCache.get(id);
+      if (listaCache) descargarICS(listaCache, { hour: NOTIFY_HOUR || 9, durationMinutes: 60 });
+      else mostrarMensaje("Lista no disponible para generar .ics", "error");
+    }));
+
+    ul.appendChild(li);
+  });
+
+  // footer paginación (igual que antes)
+  const footerLi = document.createElement("li");
+  footerLi.className = "notifs-footer";
+  footerLi.style.paddingTop = "8px";
+  footerLi.style.borderTop = "1px solid #eee";
+  footerLi.style.marginTop = "8px";
+  footerLi.style.display = "flex";
+  footerLi.style.justifyContent = "center";
+  footerLi.style.gap = "8px";
+
+  if (total > mostradas.length) {
+    const btnMas = document.createElement("button");
+    btnMas.textContent = `Cargar ${EVENTS_PAGE_INCREMENT} más (${mostradas.length}/${total})`;
+    btnMas.onclick = (e) => { e.preventDefault(); cargarMasEventos(); };
+    footerLi.appendChild(btnMas);
+  }
+
+  if (mostradas.length > EVENTS_PAGE_INCREMENT) {
+    const btnMenos = document.createElement("button");
+    btnMenos.textContent = "Mostrar menos";
+    btnMenos.onclick = (e) => { e.preventDefault(); mostrarMenosEventos(); };
+    footerLi.appendChild(btnMenos);
+  }
+
+  if (footerLi.childElementCount > 0) ul.appendChild(footerLi);
+}  
 
 /* ======= ACCIONES: marcar hecha / descartar (usar cache y getDoc fallback) ======= */
 async function marcarListaComoHecha(id) {
@@ -1060,6 +1493,12 @@ function mostrarListasDesdeCache(resetCount=false, soloPendientes=false) {
     if (soloPendientes) {
       listas = listas.filter(l => l.estado === "pendiente" || (Array.isArray(l.productos) && l.productos.some(p => p.precio === 0)));
     }
+    // total almacenadas que cumplen filtro (antes del slice/paginación)
+    const todasCoincidentes = Array.from(listasCache.values()).filter(l => normalizarTexto(l.lugar || "").includes(filtroLugar));
+    const totalStored = todasCoincidentes.length;
+    const filteredTotal = listas.length; // aquí listas ya está filtrada por filtroLugar (sin slice)
+    // actualizamos visualmente el contador (crea el contenedor si no existe)
+    updateListCountDisplay(filteredTotal, totalStored);   
     listas = listas.slice(0, listasMostradasCount);
     const ul = document.getElementById("todasLasListas");
     if (!ul) return;
@@ -1111,49 +1550,91 @@ function mostrarListasFirebase(resetCount=false, soloPendientes=false) {
 function cargarMasListas(){ listasMostradasCount += 5; mostrarListasFirebase(); }
 function alternarDetalle(id){ const detalle = document.getElementById(`detalle-${id}`); if (detalle) detalle.classList.toggle("oculto"); }
 
-async function mostrarResultadosConsulta() {
-  const filtroTienda = normalizarTexto(document.getElementById("filtroTienda")?.value || "");
-  const filtroProducto = normalizarTexto(document.getElementById("filtroProducto")?.value || "");
-  const criterioOrden = document.getElementById("ordenarPor") ? document.getElementById("ordenarPor").value : null;
-  const resultados = document.getElementById("listaResultados");
-  const contador = document.getElementById("contadorResultados");
-  if (!resultados) return;
-  resultados.innerHTML = "";
-  try {
-    const listas = Array.from(listasCache.values());
-    let totalResultados = 0;
-    listas.forEach(lista => {
-      const lugarNormalizado = normalizarTexto(lista.lugar || "");
-      const coincideTienda = !filtroTienda || lugarNormalizado.includes(filtroTienda);
-      if (!coincideTienda) return;
-      let productosFiltrados = (lista.productos || []).filter(p => {
-        const nombreNormalizado = normalizarTexto(p.nombre);
-        return !filtroProducto || nombreNormalizado.includes(filtroProducto);
-      });
-      if (criterioOrden === "precio") productosFiltrados.sort((a,b)=>a.precio-b.precio);
-      else if (criterioOrden === "nombre") productosFiltrados.sort((a,b)=>a.nombre.localeCompare(b.nombre));
-      if (productosFiltrados.length > 0) {
+/* =========================
+   mostrarResultadosConsulta
+   ========================= */
+   async function mostrarResultadosConsulta() {
+    const filtroTienda = normalizarTexto(document.getElementById("filtroTienda")?.value || "");
+    const filtroProducto = normalizarTexto(document.getElementById("filtroProducto")?.value || "");
+    const criterioOrden = document.getElementById("ordenarPor") ? document.getElementById("ordenarPor").value : null;
+    const resultados = document.getElementById("listaResultados");
+    const contador = document.getElementById("contadorResultados");
+    if (!resultados) return;
+  
+    // Si no hay término de búsqueda en ninguno de los campos, no mostrar nada
+    if (!filtroTienda && !filtroProducto) {
+      resultados.innerHTML = ""; // no mostrar nada
+      if (contador) {
+        contador.textContent = ""; // limpiar contador
+        contador.classList.remove("cero","pocos","muchos");
+      }
+      return;
+    }
+  
+    resultados.innerHTML = "";
+    try {
+      const listas = Array.from(listasCache.values());
+      let totalResultados = 0;
+      listas.forEach(lista => {
+        const lugarNormalizado = normalizarTexto(lista.lugar || "");
+        const coincideTienda = !filtroTienda || lugarNormalizado.includes(filtroTienda);
+        if (!coincideTienda) return;
+  
+        let productosFiltrados = (lista.productos || []).filter(p => {
+          const nombreNormalizado = normalizarTexto(p.nombre || "");
+          return !filtroProducto || nombreNormalizado.includes(filtroProducto);
+        });
+  
+        if (productosFiltrados.length === 0) return;
+  
+        // ordenar productos si aplica
+        if (criterioOrden === "precio") productosFiltrados.sort((a,b)=> (a.precio||0)-(b.precio||0));
+        else if (criterioOrden === "nombre") productosFiltrados.sort((a,b)=> (a.nombre||'').localeCompare(b.nombre||''));
+  
         totalResultados += productosFiltrados.length;
+  
+        // limitar a 5 mostrados inicialmente
+        const maxShow = 5;
+        const productosMostrados = productosFiltrados.slice(0, maxShow);
+        const extrasCount = Math.max(0, productosFiltrados.length - maxShow);
+  
+        const productosHTML = productosMostrados.map((p, idx) => {
+          return `<li>${escapeHtml(p.nombre)} — 💲${(p.precio||0).toFixed(2)} ${p.descripcion ? `<div style="font-size:0.9em; color:#6b7280;">📝 ${escapeHtml(p.descripcion)}</div>` : ""}</li>`;
+        }).join("");
+  
+        // render: si hay extras, incluimos esos elementos pero ocultos con clase producto-extra
+        const extrasHTML = extrasCount > 0 ? productosFiltrados.slice(maxShow).map(p => {
+          return `<li class="producto-extra oculto">${escapeHtml(p.nombre)} — 💲${(p.precio||0).toFixed(2)} ${p.descripcion ? `<div style="font-size:0.9em; color:#6b7280;">📝 ${escapeHtml(p.descripcion)}</div>` : ""}</li>`;
+        }).join("") : "";
+  
+        const moreButtonHTML = extrasCount > 0 ? `<button class="toggle-mas-productos" data-lista-id="${lista.id}" onclick="toggleProductosExtra('${lista.id}', this)">Ver ${extrasCount} más</button>` : "";
+  
         const item = document.createElement("li");
         item.innerHTML = `
-          <h3>🛍️ ${escapeHtml(lista.lugar)} — 📅 ${formatearFecha(lista.fecha)}</h3>
-          <ul>
-            ${productosFiltrados.map(p => `<li><strong>${escapeHtml(p.nombre)}</strong> - 💲${(p.precio||0).toFixed(2)} ${p.descripcion ? `<div>📝 ${escapeHtml(p.descripcion)}</div>` : ""}</li>`).join("")}
+          <h3 style="display:flex; justify-content:space-between; align-items:center;">
+            <span>🛍️ ${escapeHtml(lista.lugar)} — 📅 ${formatearFecha(lista.fecha)}</span>
+            <small style="color:#6b7280;">${productosFiltrados.length} producto(s)</small>
+          </h3>
+          <ul id="product-list-${lista.id}" style="margin-top:6px;">
+            ${productosHTML}
+            ${extrasHTML}
           </ul>
+          <div style="margin-top:6px;">${moreButtonHTML}</div>
         `;
+  
         resultados.appendChild(item);
+      });
+  
+      if (totalResultados === 0) resultados.innerHTML = "<li>No se encontraron resultados.</li>";
+      if (contador) {
+        contador.textContent = `${totalResultados} producto${totalResultados === 1 ? "" : "s"} encontrado${totalResultados === 1 ? "" : "s"}`;
+        contador.classList.remove("cero","pocos","muchos");
+        if (totalResultados === 0) contador.classList.add("cero");
+        else if (totalResultados <= 5) contador.classList.add("pocos");
+        else contador.classList.add("muchos");
       }
-    });
-    if (totalResultados === 0) resultados.innerHTML = "<li>No se encontraron resultados.</li>";
-    if (contador) {
-      contador.textContent = `${totalResultados} producto${totalResultados === 1 ? "" : "s"} encontrado${totalResultados === 1 ? "" : "s"}`;
-      contador.classList.remove("cero","pocos","muchos");
-      if (totalResultados === 0) contador.classList.add("cero");
-      else if (totalResultados <= 5) contador.classList.add("pocos");
-      else contador.classList.add("muchos");
-    }
-  } catch(e){ mostrarMensaje("Error al consultar: " + e.message, "error"); }
-}
+    } catch(e){ mostrarMensaje("Error al consultar: " + e.message, "error"); console.error(e); }
+  }  
 
 /* ======= SUGERENCIAS (debounced + usa cache) ======= */
 function mostrarSugerenciasInner(input) {
@@ -1634,6 +2115,9 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     rebuildScheduledTimeoutsFromStorage();
     actualizarNotificaciones();
+    // inicializar filtro notifs
+    setupNotifsFilterUI();
+    applyNotifsFilterAndRender();
 
     document.addEventListener('click', (e) => {
       if (e.target.closest('.sugerencias') || e.target.closest('.sugerencia-item') || e.target.closest('.producto-nombre')) {
@@ -1750,7 +2234,7 @@ function generarContenidoICS(lista, opts = {}) {
 
   // inicio en la hora local indicada
   const startLocal = dateAtHour(dtStartDate, hour);
-  const endLocal = new Date(startLocal.getTime() + durationMinutes * 120000); // duración en milisegundos
+  const endLocal = new Date(startLocal.getTime() + durationMinutes * 60000); // duración en milisegundos
 
   function pad(n){ return String(n).padStart(2,'0'); }
   function toICSDatetimeUTC(d){
@@ -1792,14 +2276,15 @@ function escapeICSText(s) {
   return String(s).replace(/\\/g,'\\\\').replace(/;/g,'\\;').replace(/,/g,'\\,').replace(/\r?\n/g,'\\n');
 }
 
-// Crea y descarga el .ics en el navegador
-function descargarICS(lista) {
-  const contenido = generarContenidoICS(lista);
+// Crea y descarga el .ics en el navegador (acepta opts que se pasan a generarContenidoICS)
+function descargarICS(lista, opts = {}) {
+  const contenido = generarContenidoICS(lista, opts);
   if (!contenido) { mostrarMensaje("No se pudo generar el archivo .ics para esta lista.", "error"); return; }
   const blob = new Blob([contenido], { type: 'text/calendar;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  const nombre = (lista.lugar ? lista.lugar.replace(/\s+/g,'_').slice(0,40) : 'lista') + `_${lista.fecha || ''}.ics`;
+  const safeName = (lista.lugar ? lista.lugar.replace(/\s+/g,'_').slice(0,40) : 'lista');
+  const nombre = `${safeName}_${lista.fecha || ''}.ics`;
   a.href = url;
   a.download = nombre;
   document.body.appendChild(a);
@@ -1827,5 +2312,6 @@ window.cargarMasListas = cargarMasListas;
 window.actualizarNotificaciones = actualizarNotificaciones;
 window.mostrarListasFirebase = mostrarListasFirebase;
 window.irAListaPorId = function(id){ mostrarSeccion("verListas"); setTimeout(()=>{ const elemento = document.querySelector(`#todasLasListas li[data-id="${id}"]`); if (elemento) elemento.scrollIntoView({behavior:"smooth", block:"center"}); },200); };
+window.toggleProductosExtra = toggleProductosExtra;
 
 /* FIN del archivo */

@@ -358,3 +358,79 @@ input::placeholder { color: #9aa4b2; }
 @media (min-width: 768px) {
   nav.open { position: static; max-height: none; opacity: 1; box-shadow: none; }
 }
+
+/* Contador de listas (verListas) */
+#contadorListasTotales { font-size: 0.95rem; color: #374151; margin-bottom: 8px; }
+
+/* Resumen notificaciones (arriba) */
+#notifsSummary { box-shadow: 0 2px 8px rgba(2,6,23,0.04); }
+#notifsSummary button { font-weight:700; cursor:pointer; }
+
+/* Filtro de notificaciones (barra) */
+#notifsFilterBar input[type="date"] {
+  border: 1px solid #e6e9ef;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: #fff;
+}
+#notifsFilterBar button {
+  border: none;
+  padding: 8px 10px;
+  border-radius: 8px;
+}
+#notifsFilterBar #btnApplyNotifsFilter { background: #1976d2; color: #fff; }
+#notifsFilterBar #btnClearNotifsFilter { background: #eef2ff; color: #111; }
+
+/* Resumen notifs */
+#notifsSummaryContainer > div { margin-bottom: 6px; }
+
+/* ================= EVENTOS - paleta lila, estilo minimalista ================= */
+.event-resumen {
+  padding: 10px;
+  border-radius: 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  color: #2b2b2b;
+  box-shadow: none;
+  border-left-width: 6px;
+}
+
+.event-resumen .texto-estado {
+  font-weight: 500;
+  font-size: 0.88rem;
+  color: #4b5563;
+}
+
+/* Tonos lila en función de urgencia (cambio respecto a pagos) */
+.event-lila-rojo { background: #fff6fb; border-left-color: #cfb8ec; }   /* muy urgente / cercano */
+.event-lila-ambar { background: #fbf5ff; border-left-color: #8959db; }  /* medio */
+.event-lila-verde { background: #f8f7ff; border-left-color: #5500dd; } /* lejano */
+
+/* botón pequeño "Ver" minimal */
+.toggle-mas-productos,
+.toggle-productos-extra {
+  padding: 6px 10px;
+  background: transparent;
+  border: 1px solid #e6e9ef;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+/* Detalles ocultos por defecto */
+.detalle-productos.oculto { display: none; }
+
+/* Productos extra ocultos */
+.producto-extra.oculto { display: none; }
+
+/* menús y listas más compactas */
+.lista-item, .notificacion-item {
+  padding: 10px;
+  border-radius: 8px;
+}
+
+/* reducir volumen visual de los listados (minimal) */
+.lista-resumen { box-shadow: none; border: 1px solid transparent; padding: 8px; }

@@ -129,11 +129,27 @@
       </button>
     </section>
 
-    <!-- Sección Notificaciones -->
+    <!-- Sección Notificaciones (con filtro "Hasta fecha") -->
     <section id="notificaciones" class="seccion oculto">
       <h2>🔔 Notificaciones de Pagos</h2>
+
+      <!-- Controles de filtro -->
+      <div id="notifsFilterBar" style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:10px;">
+        <label style="font-weight:700; color:#374151;">
+          Mostrar pagos hasta:
+          <input id="notifsFilterDate" type="date" style="margin-left:8px; padding:6px; border-radius:6px; border:1px solid #e6e9ef;" />
+        </label>
+        <button id="btnApplyNotifsFilter" style="padding:8px 10px; border-radius:8px; background:#1976d2; color:#fff; border:none; cursor:pointer; font-weight:700;">Aplicar filtro</button>
+        <button id="btnClearNotifsFilter" style="padding:8px 10px; border-radius:8px; background:#e2e8f0; color:#111; border:none; cursor:pointer; font-weight:700;">Limpiar</button>
+        <div id="notifsFilterHint" style="color:#6b7280; font-size:0.9rem; margin-left:8px;">(Desde hoy hasta la fecha seleccionada)</div>
+      </div>
+
+      <!-- Resumen / Totales calculados -->
+      <div id="notifsSummaryContainer"></div>
+
+      <!-- Lista de notificaciones (renderizada por JS) -->
       <ul id="listaNotificaciones"></ul>
-    </section>  
+    </section>
     
     <!-- Sección Eventos -->
     <section id="eventos" class="seccion oculto">
