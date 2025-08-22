@@ -11,6 +11,7 @@ let initializeApp, getAnalytics, getFirestore, collection, addDoc, query, orderB
 
 let db = null;
 let analytics = null;
+let writeBatch, getDocs; // nuevo
 
 async function initFirebase() {
   // evita reintentar si ya cargó
@@ -20,6 +21,11 @@ async function initFirebase() {
     const modApp = await import("https://www.gstatic.com/firebasejs/12.0.0/firebase-app.js");
     const modAnalytics = await import("https://www.gstatic.com/firebasejs/12.0.0/firebase-analytics.js");
     const modFirestore = await import("https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js");
+
+    // dentro de initFirebase(), justo después de obtener modFirestore:
+    writeBatch = modFirestore.writeBatch;
+    getDocs = modFirestore.getDocs; // opcional si lo usarás
+    // (asegúrate de declarar estas variables arriba similar a las demás)
 
     // asignar referencias
     initializeApp = modApp.initializeApp;
@@ -92,6 +98,69 @@ function addMonthsKeepDay(date, months){
   const dim = daysInMonth(targetYear, monthIndex);
   const newDay = Math.min(d, dim);
   return new Date(targetYear, monthIndex, newDay);
+}
+
+// ---------- Helper: control de ejecución bulk y debounce ----------
+let isBulkUpdating = false; // evita cascadas mientras hacemos muchos updates
+const debounced = (fn, wait = 500) => {
+  let t;
+  return (...args) => {
+    clearTimeout(t);
+    t = setTimeout(() => fn(...args), wait);
+  };
+};
+
+// Reemplaza llamadas a actualizarNotificaciones() por debouncedActualizarNotificaciones()
+// si quieres evitar ejecuciones en ráfaga:
+const debouncedActualizarNotificaciones = debounced(actualizarNotificaciones, 600);
+
+// ---------- Instrumentación opcional (temporal) ----------
+window.__clientWriteCounter = 0;
+function incrClientWriteCounter(n = 1) {
+  window.__clientWriteCounter = (window.__clientWriteCounter || 0) + n;
+  if (window.__clientWriteCounter % 100 === 0) {
+    console.warn(`Client write counter: ${window.__clientWriteCounter}`);
+  }
+}
+
+// ---------- safeUpdateDoc: solo actualiza cuando hay cambios visibles en cache ----------
+async function safeUpdateDoc(docRefOrPath, updates) {
+  if (!updates || Object.keys(updates).length === 0) return false;
+  let id;
+  if (typeof docRefOrPath === 'string') id = docRefOrPath;
+  else if (docRefOrPath && docRefOrPath.id) id = docRefOrPath.id;
+
+  if (id && listasCache.has(id)) {
+    const cached = listasCache.get(id);
+    let need = false;
+    for (const k of Object.keys(updates)) {
+      const newV = updates[k];
+      const oldV = cached[k];
+
+      // si es función (p. ej. serverTimestamp()), forzamos update
+      if (typeof newV === 'function') { need = true; break; }
+
+      // comparación básica: si son objetos, considera que cambian (o implementa deepEqual si quieres)
+      if (typeof newV === 'object' && newV !== null) { need = true; break; }
+
+      if (String(newV) !== String(oldV)) { need = true; break; }
+    }
+    if (!need) return false;
+  }
+
+  try {
+    let docRefObj = docRefOrPath;
+    if (typeof docRefOrPath === 'string') {
+      if (!canUseFirestore()) return false;
+      docRefObj = doc(db, "listas", docRefOrPath);
+    }
+    await updateDoc(docRefObj, updates);
+    incrClientWriteCounter(1);
+    return true;
+  } catch (err) {
+    console.error("safeUpdateDoc error:", err);
+    return false;
+  }
 }
 
 /* ======= CONFIG Y CONSTANTES (asegúrate de tener definidas estas variables en tu entorno) ======= */
@@ -609,27 +678,42 @@ function esPendientePorFechaOnly(lista) {
 
 /* ======= MONTHLY HELPERS (usar cache) ======= */
 async function advanceMonthlyIfPastForAll() {
-  if (!navigator.onLine) return;
+  if (!navigator.onLine || !canUseFirestore()) return;
+  if (isBulkUpdating) return;
+  isBulkUpdating = true;
   try {
+    const batch = writeBatch(db);
+    let pending = 0;
     for (const lista of Array.from(listasCache.values())) {
-      if (lista.pagoMensual) {
-        let f = parseFechaFromString(lista.fecha);
-        const hoy = startOfDay(new Date());
-        if (!f) continue;
-        let advanced = false;
-        while (startOfDay(f).getTime() < hoy.getTime()) {
-          f = addMonthsKeepDay(f, 1);
-          advanced = true;
-        }
-        if (advanced) {
-          try {
-            await updateDoc(doc(db, 'listas', lista.id), { fecha: formatDateToInput(f), _notificacionDescartada: false, estado: 'pendiente', completada: false });
-            cancelScheduledNotificationsForList(lista.id);
-          } catch(e){ console.error('Error advancing mensual:', e); }
-        }
+      if (!lista || !lista.pagoMensual) continue;
+      let f = parseFechaFromString(lista.fecha);
+      const hoy = startOfDay(new Date());
+      if (!f) continue;
+      let advanced = false;
+      while (startOfDay(f).getTime() < hoy.getTime()) {
+        f = addMonthsKeepDay(f, 1);
+        advanced = true;
+      }
+      if (advanced) {
+        const nuevaStr = formatDateToInput(f);
+        const refDoc = doc(db, 'listas', lista.id);
+        batch.update(refDoc, { fecha: nuevaStr, _notificacionDescartada: false, estado: 'pendiente', completada: false });
+        // Actualizar cache local para evitar reescrituras innecesarias
+        listasCache.set(lista.id, { ...lista, fecha: nuevaStr, _notificacionDescartada: false, estado: 'pendiente', completada: false });
+        pending++;
       }
     }
-  } catch(e){ console.error('advanceMonthlyIfPastForAll error:', e); }
+    if (pending > 0) {
+      await batch.commit();
+      incrClientWriteCounter(pending);
+      // cancelar notifs en lote (si tienes función que acepta array)
+      // por ahora puedes iterar cancelScheduledNotificationsForList por cada id modificado
+    }
+  } catch (e) {
+    console.error('advanceMonthlyIfPastForAll error (batch):', e);
+  } finally {
+    isBulkUpdating = false;
+  }
 }
 
 async function advanceMonthlyList(lista) {
@@ -638,17 +722,21 @@ async function advanceMonthlyList(lista) {
     if (!f) return;
     const nueva = addMonthsKeepDay(f, 1);
     const nuevaStr = formatDateToInput(nueva);
-    await updateDoc(doc(db, 'listas', lista.id), { fecha: nuevaStr, _notificacionDescartada: false, estado: 'pendiente', completada: false });
-    cancelScheduledNotificationsForList(lista.id);
-    if (navigator.onLine && canUseFirestore()) {
-      const d = await getDoc(doc(db, "listas", lista.id));
-      if (d.exists()) {
-        const listaObj = { id: d.id, ...d.data() };
-        listasCache.set(listaObj.id, listaObj);
-        await schedulePersistCacheToIndexedDB();
-        await scheduleNotificationsForList(listaObj);
-      }
+
+    // usa safeUpdateDoc para evitar escrituras innecesarias
+    const updated = await safeUpdateDoc(lista.id, { fecha: nuevaStr, _notificacionDescartada: false, estado: 'pendiente', completada: false });
+    if (!updated) {
+      // nada que actualizar
+      return;
     }
+
+    cancelScheduledNotificationsForList(lista.id);
+
+    // refrescar cache/agenda localmente
+    listasCache.set(lista.id, { ...lista, fecha: nuevaStr, _notificacionDescartada: false, estado: 'pendiente', completada: false });
+    await schedulePersistCacheToIndexedDB().catch(()=>{});
+    await scheduleNotificationsForList(listasCache.get(lista.id));
+
     mostrarMensaje(`🔁 Pago mensual actualizado a ${formatearFecha(nuevaStr)}`, "success");
   } catch(e){ console.error('advanceMonthlyList error:', e); }
 }
@@ -860,18 +948,12 @@ function setupNotifsFilterUI() {
 
   if (!input || !btnApply || !btnClear) return;
 
-  // inicializar input con valor guardado o valor por defecto (por ejemplo fin de mes + 3 días)
+  // inicializar input con valor guardado o vacío (NO poner heurístico por defecto aquí)
   const saved = getNotifsFilterEndDate();
   if (saved) {
     input.value = formatDateForInput(saved);
   } else {
-   // inicializar input con valor guardado (si lo hay). NO colocar valor por defecto.
-    const saved = getNotifsFilterEndDate();
-    if (saved) {
-      input.value = formatDateForInput(saved);
-    } else {
-      input.value = ""; // dejar vacío para que el usuario elija
-    }
+    input.value = ""; // dejar vacío para que el usuario elija
   }
 
   btnApply.addEventListener('click', (e) => {
@@ -892,7 +974,6 @@ function setupNotifsFilterUI() {
       return;
     }
 
-    // guardar filtro y aplicar: actualiza summary y lista de notificaciones
     setNotifsFilterEndDate(val);
     applyNotifsFilterAndRender();
     mostrarMensaje("Filtro aplicado.", "success");
@@ -901,7 +982,7 @@ function setupNotifsFilterUI() {
   btnClear.addEventListener('click', (e) => {
     e.preventDefault();
     setNotifsFilterEndDate(null);
-    input.value = ""; // deja vacío para que el usuario elija
+    input.value = "";
     applyNotifsFilterAndRender();
     mostrarMensaje("Filtro limpiado.", "info");
   });
@@ -1106,45 +1187,60 @@ async function actualizarNotificaciones(listasExternas = null) {
       if (!listas || listas.length === 0) listas = [];
     }
 
-    // marcar expiradas / caducadas si aplica
+    // --- marcar expiradas / caducadas (coleccionar cambios primero) ---
     const hoy = startOfDay(new Date());
+    const pendingEstadoUpdates = []; // { id, estado, cachedUpdated }
+
     for (const l of listas) {
       try {
         const f = parseFechaFromString(l.fecha);
         if (!l.pagoMensual && f && startOfDay(f).getTime() < hoy.getTime()) {
-          // si es evento: marcar como 'caducado', si no evento usar 'expirada' (compatibilidad)
-          if (l.isEvento) {
-            l.estado = 'caducado';
-          } else {
-            l.estado = 'expirada';
-          }
-          if (navigator.onLine && canUseFirestore()) {
-            try { await updateDoc(doc(db, 'listas', l.id), { estado: l.estado }); }
-            catch(err){ console.error("No se pudo marcar expirada/caducada en servidor:", err); }
-          } else {
-            listasCache.set(l.id, { ...l, estado: l.estado });
-            await schedulePersistCacheToIndexedDB().catch(()=>{});
+          const nuevoEstado = l.isEvento ? 'caducado' : 'expirada';
+          if (String(l.estado || '') !== nuevoEstado) {
+            pendingEstadoUpdates.push({ id: l.id, estado: nuevoEstado });
+            // actualizar cache local inmediatamente para no provocar inconsistencia visual
+            listasCache.set(l.id, { ...l, estado: nuevoEstado });
           }
         }
       } catch(e){ console.error("Error procesando expiradas:", e); }
     }
 
-    // Separar notificaciones normales de eventos
+    // Aplicar writes en batch si hay cambios y hay Firestore disponible
+    if (pendingEstadoUpdates.length > 0 && navigator.onLine && canUseFirestore() && typeof writeBatch === 'function') {
+      try {
+        const BATCH_SIZE = 50;
+        for (let i = 0; i < pendingEstadoUpdates.length; i += BATCH_SIZE) {
+          const chunk = pendingEstadoUpdates.slice(i, i + BATCH_SIZE);
+          const batch = writeBatch(db);
+          chunk.forEach(u => {
+            const ref = doc(db, 'listas', u.id);
+            batch.update(ref, { estado: u.estado });
+          });
+          await batch.commit();
+          incrClientWriteCounter(chunk.length);
+        }
+        // persistimos cache local tras los commits
+        await schedulePersistCacheToIndexedDB().catch(()=>{});
+      } catch (e) {
+        console.error("Error aplicando estados en batch:", e);
+        // Si falla el batch, no abortamos: la cache ya fue actualizada localmente.
+      }
+    } else if (pendingEstadoUpdates.length > 0) {
+      // offline o writeBatch no disponible -> solo persistir cache local
+      await schedulePersistCacheToIndexedDB().catch(()=>{});
+    }
+
+    // --- continuar con resto de la función (no modificado) ---
     const pendientesPorFecha = listas.filter(l => esPendientePorFechaOnly(l) && !l.isEvento);
     const eventosPorFecha = listas.filter(l => esPendientePorFechaOnly(l) && l.isEvento);
 
-    // Renderizar
-    renderListaNotificaciones(pendientesPorFecha); // tu función existente (paginada)
+    renderListaNotificaciones(pendientesPorFecha);
     renderEvents(eventosPorFecha);
-    // ahora solo aplicamos el filtro (si existe) o limpiamos el resumen
     applyNotifsFilterAndRender();
 
-    // Programar notificaciones (si quieres que eventos tengan recordatorios también)
     pendientesPorFecha.forEach(lista => scheduleNotificationsForList(lista));
-    eventosPorFecha.forEach(lista => scheduleNotificationsForList(lista)); // opcional
+    eventosPorFecha.forEach(lista => scheduleNotificationsForList(lista));
 
-    // actualizar badges (ya lo hace renderMenuBadge dentro de las funciones)
-    // para seguridad: aseguramos que el badge de notifs también esté actualizado con total
     renderMenuBadge(pendientesPorFecha.length, 'notifs');
 
   } catch(e) { console.error("Error actualizarNotificaciones:", e); }
@@ -1381,7 +1477,7 @@ async function marcarListaComoHecha(id) {
       } catch(err) {
         console.warn("No se pudo obtener lista del servidor:", err);
       }
-    }    
+    }
     if (!lista) return mostrarMensaje('Lista no encontrada', "error");
 
     if (lista.pagoMensual) {
@@ -1389,8 +1485,8 @@ async function marcarListaComoHecha(id) {
         await advanceMonthlyList(lista);
         mostrarMensaje("Pago mensual avanzado en la nube.", "success");
       } else {
-        const nuevaFecha = formatDateToInput(addMonthsKeepDay(parseFechaFromString(lista.fecha), 1));
-        const todayStr = formatDateToInput(new Date());
+        const nuevaFecha = formatDateForInput(addMonthsKeepDay(parseFechaFromString(lista.fecha), 1));
+        const todayStr = formatDateForInput(new Date());
         const updates = loadPendingUpdates();
         updates[id] = { fecha: nuevaFecha, _notificacionDescartada: false, estado: 'pendiente', completada: false, ultimoPagoFecha: todayStr, ultimoPagoGuardadoAt: new Date().toISOString() };
         savePendingUpdates(updates);
@@ -1399,14 +1495,16 @@ async function marcarListaComoHecha(id) {
         cancelScheduledNotificationsForList(id);
         mostrarMensaje("Guardado fuera de línea: pago mensual marcado. Se sincronizará al reconectar.", "offline");
       }
-      await actualizarNotificaciones();
+      debouncedActualizarNotificaciones();
       mostrarListasFirebase(true);
       return;
     }
 
     if (navigator.onLine && canUseFirestore()) {
-      await updateDoc(doc(db, "listas", id), { estado: "normal", completada: true });
-      mostrarMensaje("Lista marcada como hecha (en la nube).", "success");
+      // usa safeUpdateDoc para evitar escritura si no hay cambio
+      const updated = await safeUpdateDoc(id, { estado: "normal", completada: true });
+      if (updated) mostrarMensaje("Lista marcada como hecha (en la nube).", "success");
+      else mostrarMensaje("No hubo cambios que guardar.", "info");
     } else {
       const updates = loadPendingUpdates();
       updates[id] = { ...(updates[id]||{}), estado: "normal", completada: true };
@@ -1415,16 +1513,19 @@ async function marcarListaComoHecha(id) {
       await schedulePersistCacheToIndexedDB();
       mostrarMensaje("Guardado fuera de línea: lista marcada como hecha. Se sincronizará al reconectar.", "offline");
     }
+
     cancelScheduledNotificationsForList(id);
-    await actualizarNotificaciones();
+    debouncedActualizarNotificaciones();
     mostrarListasFirebase(true);
   } catch(e){ mostrarMensaje("Error marcando la lista como hecha", "error"); console.error(e); }
 }
+
 async function descartarNotificacion(id) {
   try {
     if (navigator.onLine && canUseFirestore()) {
-      await updateDoc(doc(db, "listas", id), { _notificacionDescartada: true });
-      mostrarMensaje("Notificación descartada (en la nube).", "success");
+      const updated = await safeUpdateDoc(id, { _notificacionDescartada: true });
+      if (updated) mostrarMensaje("Notificación descartada (en la nube).", "success");
+      else mostrarMensaje("No hubo cambios para descartar.", "info");
     } else {
       const updates = loadPendingUpdates();
       updates[id] = { ...(updates[id]||{}), _notificacionDescartada: true };
@@ -1434,7 +1535,7 @@ async function descartarNotificacion(id) {
       mostrarMensaje("Guardado fuera de línea: notificación descartada. Se sincronizará al reconectar.", "offline");
     }
     cancelScheduledNotificationsForList(id);
-    actualizarNotificaciones();
+    debouncedActualizarNotificaciones();
   } catch(e){ console.error("Error descartar:", e); mostrarMensaje("Error descartando notificación", "error"); }
 }
 
@@ -1873,18 +1974,22 @@ document.getElementById("formLista")?.addEventListener("submit", async (e) => {
         const d = await getDoc(doc(db, "listas", idLista));
         if (d.exists()) prev = { id: d.id, ...d.data() };
       }
-
       if (reactivarCheckbox && reactivarCheckbox.checked) {
         const confirmar = confirm("¿Confirmas que deseas reactivar las notificaciones para esta lista? Si confirmas, la lista volverá a aparecer en notificaciones si aplica.");
         if (confirmar) {
+          // Reactivar notificaciones: además de quitar el flag, asegurar que la lista NO esté marcada como completada
           datos._notificacionDescartada = false;
+          datos.completada = false;
+          // asegurar estado acorde a la fecha (usa 'pendiente' si la fecha es hoy o futura)
+          // la variable 'estado' ya fue calculada arriba al iniciar el submit y se encuentra en datos.estado,
+          // así que nos aseguramos de conservarla (esto mantiene compatibilidad con la lógica previa).
+          datos.estado = estado;
         } else {
           datos._notificacionDescartada = true;
         }
       } else {
         datos._notificacionDescartada = true;
       }
-
       if (navigator.onLine && canUseFirestore()) {
         await updateDoc(doc(db, "listas", idLista), datos);
         mostrarMensaje("Lista actualizada correctamente (en la nube).", "success");
@@ -1950,94 +2055,158 @@ function agregarProducto() {
 function eliminarProducto(boton) { const divProducto = boton.parentElement; if (divProducto) divProducto.remove(); }
 
 /* ======= SYNC ONLINE/OFFLINE: procesar colas pendientes al reconectar (mejor mapeo tmp_ => real id) ======= */
+// bandera para evitar loops en onSnapshot / re-procesos masivos
+let isSyncingPending = false;
+
 window.addEventListener("online", async () => {
   mostrarMensaje("Conexión restablecida. Sincronizando cambios pendientes...", "info");
 
-  await initFirebase();
-  if (!canUseFirestore()) {
-    mostrarMensaje("Conexión OK, pero Firebase no disponible. Reintentaré sincronizar más tarde.", "error");
+  // evitar colisiones concurrentes
+  if (isSyncingPending) {
+    console.log("Sincronización ya en curso, se omite nueva llamada online.");
     return;
   }
+  isSyncingPending = true;
 
-  const pendingCreates = loadPendingCreates();
-  const remainingCreates = [];
-
-  for (const c of pendingCreates) {
-    try {
-      if (!c.clientId) c.clientId = generateClientId();
-      const ref = await addDoc(collection(db, "listas"), c);
-      const tmpKey = `tmp_${c.clientId}`;
-      const cacheEntry = listasCache.get(tmpKey);
-      if (cacheEntry) {
-        listasCache.delete(tmpKey);
-        await deleteOneFromIndexedDB(tmpKey).catch(()=>{});
-      }
-      const newDoc = { id: ref.id, ...c };
-      listasCache.set(ref.id, newDoc);
-      await saveOneToIndexedDB(newDoc).catch(()=>{});
-      const upd = loadPendingUpdates();
-      if (upd[tmpKey]) {
-        upd[ref.id] = { ...(upd[ref.id]||{}), ...upd[tmpKey] };
-        delete upd[tmpKey];
-        savePendingUpdates(upd);
-      }
-      const dels = loadPendingDeletes();
-      const idxTmp = dels.indexOf(tmpKey);
-      if (idxTmp !== -1) {
-        dels[idxTmp] = ref.id;
-        savePendingDeletes(dels);
-      }
-      mostrarMensaje(`Lista creada en la nube: ${c.lugar || ""}`, "success");
-    } catch(e){
-      console.error("Error sincronizar create:", e);
-      remainingCreates.push(c);
-      mostrarMensaje("Error sincronizando una creación pendiente", "error");
+  try {
+    await initFirebase();
+    if (!canUseFirestore()) {
+      mostrarMensaje("Conexión OK, pero Firebase no disponible. Reintentaré sincronizar más tarde.", "error");
+      isSyncingPending = false;
+      return;
     }
-  }
-  savePendingCreates(remainingCreates);
 
-  const pendingUpdatesNow = loadPendingUpdates();
-  for (const id in pendingUpdatesNow) {
-    try {
-      if (id.startsWith("tmp_")) {
-        const tmp = listasCache.get(id);
-        if (tmp && tmp.clientId) {
-          mostrarMensaje(`Sincronización: pendiente update para entrada temporal ${id}`, "info");
-          continue;
+    // ------------ HANDLING: pendientes de CREATES (batch set con IDs cliente-side) ------------
+    const pendingCreates = loadPendingCreates();
+    const remainingCreates = [];
+    if (Array.isArray(pendingCreates) && pendingCreates.length > 0) {
+      // chunkar para no exceder limites; usar tamaño conservador (200)
+      const CHUNK = 200;
+      for (let i = 0; i < pendingCreates.length; i += CHUNK) {
+        const chunk = pendingCreates.slice(i, i + CHUNK);
+        try {
+          const batch = writeBatch(db);
+          const tmpToNewId = {};
+          chunk.forEach(c => {
+            // crear docRef con id generado client-side
+            const newRef = doc(collection(db, "listas"));
+            // si quieres que createdAt sea serverTimestamp, puedes setearlo aquí
+            batch.set(newRef, { ...c, createdAt: safeServerTimestamp() });
+            tmpToNewId[`tmp_${c.clientId}`] = newRef.id;
+          });
+          await batch.commit();
+          incrClientWriteCounter(chunk.length);
+          // actualizar cache/localDB para cada creado
+          for (const c of chunk) {
+            const tmpKey = `tmp_${c.clientId}`;
+            const newId = tmpToNewId[tmpKey];
+            // eliminar tmp de cache si existe y reemplazar por nuevo doc
+            const tmpEntry = listasCache.get(tmpKey);
+            if (tmpEntry) {
+              listasCache.delete(tmpKey);
+              await deleteOneFromIndexedDB(tmpKey).catch(()=>{});
+            }
+            const newDoc = { id: newId, ...c };
+            listasCache.set(newId, newDoc);
+            await saveOneToIndexedDB(newDoc).catch(()=>{});
+            // actualizar pendingUpdates mapping si existen keys que referían al tmp
+            const upd = loadPendingUpdates();
+            if (upd[tmpKey]) {
+              upd[newId] = { ...(upd[newId]||{}), ...upd[tmpKey] };
+              delete upd[tmpKey];
+              savePendingUpdates(upd);
+            }
+            // si había deletes referidas al tmp, actualízalas
+            let dels = loadPendingDeletes();
+            if (dels && Array.isArray(dels)) {
+              const idxTmp = dels.indexOf(tmpKey);
+              if (idxTmp !== -1) {
+                dels[idxTmp] = newId;
+                savePendingDeletes(dels);
+              }
+            }
+          }
+        } catch (err) {
+          console.error("Error sincronizando chunk de creates:", err);
+          // si falla el chunk entero, lo dejamos para reintentar luego
+          remainingCreates.push(...chunk);
         }
-        continue;
       }
-      const payload = { ...pendingUpdatesNow[id] };
-      if (payload.ultimoPagoGuardadoAt && canUseFirestore()) {
-        payload.ultimoPagoGuardadoAt = safeServerTimestamp();
-      }
-      await updateDoc(doc(db, "listas", id), payload);
-      mostrarMensaje(`Cambios sincronizados para lista ${id}`, "success");
-    } catch(e){
-      console.error("Error sync update:", e);
-      mostrarMensaje(`Error sincronizando cambios para ${id}`, "error");
+      savePendingCreates(remainingCreates);
     }
-  }
-  savePendingUpdates({});
 
-  const pendingDeletesNow = loadPendingDeletes();
-  for (const d of pendingDeletesNow) {
-    try {
-      if (d.startsWith("tmp_")) {
-        listasCache.delete(d);
-        await deleteOneFromIndexedDB(d).catch(()=>{});
-        mostrarMensaje(`Eliminada local (temporal): ${d}`, "success");
-        continue;
+    // ------------ HANDLING: pendientes de UPDATES (batch update) ------------
+    const pendingUpdatesNow = loadPendingUpdates();
+    const updateIds = Object.keys(pendingUpdatesNow || {});
+    if (updateIds.length > 0) {
+      const CHUNK = 200;
+      for (let i = 0; i < updateIds.length; i += CHUNK) {
+        const chunkIds = updateIds.slice(i, i + CHUNK);
+        try {
+          const batch = writeBatch(db);
+          chunkIds.forEach(id => {
+            // si id es tmp_ (aún no fue mapeado), saltar y retener
+            if (id.startsWith("tmp_")) return;
+            const payload = { ...(pendingUpdatesNow[id]||{}) };
+            // si payload incluye campos de tiempo que deberían ser serverTimestamp, normalizarlos
+            if (payload.ultimoPagoGuardadoAt) payload.ultimoPagoGuardadoAt = safeServerTimestamp();
+            const ref = doc(db, "listas", id);
+            batch.update(ref, payload);
+          });
+          await batch.commit();
+          incrClientWriteCounter(chunkIds.length);
+          // eliminar chunkIds aplicados del pendingUpdatesNow (solo los que no eran tmp_)
+          chunkIds.forEach(id => { if (!id.startsWith("tmp_")) delete pendingUpdatesNow[id]; });
+        } catch (err) {
+          console.error("Error sincronizando chunk de updates:", err);
+          // en caso de fallo no eliminamos los ids (se reintentará)
+        }
       }
-      await deleteDoc(doc(db, "listas", d));
-      mostrarMensaje(`Eliminada en la nube: ${d}`, "success");
-    } catch(e){ console.error("Error sync delete:", e); mostrarMensaje(`Error sincronizando eliminación ${d}`, "error"); }
-  }
-  savePendingDeletes([]);
+      savePendingUpdates(pendingUpdatesNow);
+    }
 
-  rebuildScheduledTimeoutsFromStorage();
-  actualizarNotificaciones();
-  mostrarMensaje("Sincronización completada.", "success");
+    // ------------ HANDLING: pendientes de DELETES (batch delete) ------------
+    const pendingDeletesNow = loadPendingDeletes() || [];
+    if (pendingDeletesNow.length > 0) {
+      const remainingDeletes = [];
+      const CHUNK = 200;
+      for (let i = 0; i < pendingDeletesNow.length; i += CHUNK) {
+        const chunk = pendingDeletesNow.slice(i, i + CHUNK);
+        try {
+          const batch = writeBatch(db);
+          chunk.forEach(id => {
+            if (id.startsWith("tmp_")) {
+              // si es tmp_: simplemente limpiar la cache/localDB
+              listasCache.delete(id);
+              deleteOneFromIndexedDB(id).catch(()=>{});
+            } else {
+              batch.delete(doc(db, "listas", id));
+            }
+          });
+          await batch.commit();
+          incrClientWriteCounter(chunk.length);
+        } catch (err) {
+          console.error("Error synchronizing chunk deletes:", err);
+          // si falla, añadimos a remainingDeletes los que no sean tmp_ (para reintentar)
+          chunk.forEach(id => { if (!id.startsWith("tmp_")) remainingDeletes.push(id); });
+        }
+      }
+      savePendingDeletes(remainingDeletes);
+    }
+
+    // reconstruir timers, persistir cache y actualizar UI al final (una sola vez)
+    rebuildScheduledTimeoutsFromStorage();
+    await schedulePersistCacheToIndexedDB().catch(()=>{});
+    debouncedActualizarNotificaciones();
+    mostrarListasFirebase(true);
+    mostrarMensaje("Sincronización completada.", "success");
+
+  } catch (e) {
+    console.error("Error en handler online:", e);
+    mostrarMensaje("Error sincronizando cambios pendientes. Reintentaré más tarde.", "error");
+  } finally {
+    isSyncingPending = false;
+  }
 });
 
 window.addEventListener("offline", () => mostrarMensaje("Sin conexión. Las acciones quedarán guardadas localmente y se sincronizarán al reconectar.", "offline"));
@@ -2073,8 +2242,13 @@ async function startListasListener() {
         }
       });
       await schedulePersistCacheToIndexedDB().catch(()=>{});
-      actualizarNotificaciones(Array.from(listasCache.values()));
-      mostrarListasFirebase(true);
+      if (isSyncingPending) {
+        debouncedActualizarNotificaciones();
+        mostrarListasFirebase(true);
+      } else {
+        actualizarNotificaciones(Array.from(listasCache.values()));
+        mostrarListasFirebase(true);
+      }
     }, async (err) => {
       console.error("onSnapshot listas error:", err);
       mostrarMensaje("Error al conectar con Firestore; usando datos en caché.", "offline");
@@ -2231,21 +2405,55 @@ document.addEventListener("DOMContentLoaded", async () => {
 async function reactivateNotifications(id) {
   try {
     if (!id) return;
+
+    // Preparar payload que reactive notificaciones y, si aplica, deje la lista como no completada
+    const cached = listasCache.get(id) || {};
+    const now = startOfDay(new Date());
+    let payload = { _notificacionDescartada: false, completada: false };
+
+    // decidir estado según la fecha de la lista (si existe): 
+    // si la fecha es hoy o futura => 'pendiente', sino 'normal'
+    try {
+      const f = parseFechaFromString(cached.fecha);
+      if (f && !isNaN(f) && startOfDay(f).getTime() >= now.getTime()) {
+        payload.estado = 'pendiente';
+      } else {
+        payload.estado = cached.estado || 'normal';
+      }
+    } catch(e) {
+      payload.estado = cached.estado || 'normal';
+    }
+
     if (navigator.onLine && canUseFirestore()) {
-      await updateDoc(doc(db, "listas", id), { _notificacionDescartada: false });
+      await updateDoc(doc(db, "listas", id), payload);
       mostrarMensaje("Notificaciones reactivadas (en la nube).", "success");
     } else {
       const updates = loadPendingUpdates();
-      updates[id] = { ...(updates[id]||{}), _notificacionDescartada: false };
+      updates[id] = { ...(updates[id]||{}), ...payload };
       savePendingUpdates(updates);
-      const cached = listasCache.get(id);
-      if (cached) { cached._notificacionDescartada = false; listasCache.set(id, cached); await schedulePersistCacheToIndexedDB(); }
+      const cached2 = listasCache.get(id);
+      if (cached2) {
+        const merged = { ...cached2, ...payload };
+        listasCache.set(id, merged);
+        await schedulePersistCacheToIndexedDB();
+      }
       mostrarMensaje("Guardado fuera de línea: se reactivarán notificaciones al sincronizar.", "offline");
     }
+
+    // Intentar (desde la cache) re-agendar notificaciones si ahora la lista cumple la condición
     const lista = listasCache.get(id);
+    if (lista) {
+      lista._notificacionDescartada = false;
+      lista.completada = false;
+      if (lista.estado === undefined) lista.estado = payload.estado;
+    }
     if (lista && esPendientePorFechaOnly(lista)) await scheduleNotificationsForList(lista);
-    actualizarNotificaciones();
-  } catch(e){ console.error("reactivateNotifications error:", e); mostrarMensaje("Error reactivando notificaciones", "error"); }
+
+    debouncedActualizarNotificaciones();
+  } catch(e) {
+    console.error("reactivateNotifications error:", e);
+    mostrarMensaje("Error reactivando notificaciones", "error");
+  }
 }
 window.reactivateNotifications = reactivateNotifications;
 
