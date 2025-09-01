@@ -2091,6 +2091,13 @@ async function editarLista(id) {
     fechaInputEl.value = lista.fecha ? formatDateToInput(parseFechaFromString(lista.fecha)) : "";
     if (document.getElementById("esPagoMensual")) document.getElementById("esPagoMensual").checked = !!lista.pagoMensual;
     if (document.getElementById("esEvento")) document.getElementById("esEvento").checked = !!lista.isEvento;
+    // Normaliza estado por si el doc traía ambos en true
+    const pagEl = document.getElementById("esPagoMensual");
+    const evEl  = document.getElementById("esEvento");
+    if (pagEl && evEl && pagEl.checked && evEl.checked) {
+      // Regla: prioriza "Evento" (ajústala si prefieres)
+      pagEl.checked = false;
+    }
     document.getElementById("idListaEditando").value = id;
     document.getElementById("tituloFormulario").textContent = "Editar Lista de Compras";
     const form = document.getElementById('formLista');
@@ -2180,6 +2187,11 @@ if (hayError || productos.length === 0) return;
   const idLista = document.getElementById("idListaEditando").value;
   const esPagoMensual = !!document.getElementById("esPagoMensual") && document.getElementById("esPagoMensual").checked;
   const esEvento = !!document.getElementById("esEvento") && document.getElementById("esEvento").checked;
+  // Exclusión mutua defensiva
+  if (esPagoMensual && esEvento) {
+    mostrarMensaje('No puedes marcar "Pago mensual" y "Evento" a la vez.', 'error');
+    return;
+  }
   const datos = { lugar, fecha: fechaInput, productos, estado, pagoMensual: esPagoMensual, isEvento: esEvento };
 
   const reactivarCheckbox = document.getElementById('reactivarNotifs');
@@ -2641,6 +2653,33 @@ document.addEventListener("DOMContentLoaded", async () => {
     
     // Estado inicial (si quieres que arranque mostrando "Todas"):
     setFiltroListas('todas');
+
+    // === Exclusión mutua: Pago mensual vs Evento ===
+    (function setupMonthlyEventMutex(){
+      const pag = document.getElementById('esPagoMensual');
+      const ev  = document.getElementById('esEvento');
+      if (!pag || !ev) return;
+
+      const uncheckOther = (who) => {
+        if (who === 'pag' && pag.checked) {
+          ev.checked = false;
+          // mostrarMensaje('Seleccionaste "Pago mensual"; se desmarca "Evento".', 'info'); // opcional
+        }
+        if (who === 'ev' && ev.checked) {
+          pag.checked = false;
+          // mostrarMensaje('Seleccionaste "Evento"; se desmarca "Pago mensual".', 'info'); // opcional
+        }
+      };
+
+      pag.addEventListener('change', () => uncheckOther('pag'));
+      ev.addEventListener('change',  () => uncheckOther('ev'));
+
+      // Coherencia al cargar/editar por si vienen ambos true de datos antiguos
+      if (pag.checked && ev.checked) {
+        // Regla: prioriza "Evento" (ajústalo si prefieres lo contrario)
+        pag.checked = false;
+      }
+    })();
         
     // ====== Rango de fechas con Flatpickr (un solo calendario) ======
     try {
