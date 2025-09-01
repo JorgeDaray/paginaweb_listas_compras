@@ -66,6 +66,12 @@
                 placeholder="Precio"
                 class="producto-precio"
                 required
+                step="0.01"
+                min="0"
+                inputmode="decimal"
+                autocomplete="off"
+                onwheel="this.blur()"
+                aria-label="Precio (usa punto o coma)"
               />
               <input
                 type="text"
@@ -120,14 +126,64 @@
           placeholder="Filtrar por lugar de compra..."
           oninput="mostrarListasFirebase(true)"
         />
-        <button id="btnPendientes">Pendientes</button>
-        <button id="btnTodas">Todas</button>
+    
+        <!-- Rango de fechas (un solo input con Flatpickr) -->
+        <input
+          type="text"
+          id="rangoFechasListas"
+          placeholder="Rango de fechas"
+          aria-label="Rango de fechas (inicio y fin)"
+          style="max-width: 240px;"
+        />
+
+        <!-- Inputs originales ocultos (la lógica JS los usa) -->
+        <input
+          type="date"
+          id="fechaDesdeListas"
+          aria-label="Desde"
+          onchange="mostrarListasFirebase(true)"
+          style="display:none"
+        />
+        <input
+          type="date"
+          id="fechaHastaListas"
+          aria-label="Hasta"
+          onchange="mostrarListasFirebase(true)"
+          style="display:none"
+        />
+
+        <button type="button" id="btnLimpiarFechas" onclick="limpiarFechasListas()">
+          Limpiar fechas
+        </button>
+
+        <!-- Botonera compacta: Todas / Pendientes -->
+        <div class="segmented" id="filtroEstadoListas" role="group" aria-label="Filtro de estado" style="margin-top:6px;">
+          <button type="button" id="btnTodas" class="seg-btn active" aria-pressed="true">Todas</button>
+          <button type="button" id="btnPendientes" class="seg-btn" aria-pressed="false">Pendientes</button>
+        </div>
+      </div>
+      <!-- Export/Import backup -->
+      <div style="display:flex; gap:8px; margin:.5rem 0;">
+        <button class="btn" onclick="exportarJSON()">
+          <i class="fa-solid fa-file-export" aria-hidden="true"></i> Exportar
+        </button>
+
+        <label class="btn" style="cursor:pointer;">
+          <i class="fa-solid fa-file-import" aria-hidden="true"></i> Importar
+          <input
+            type="file"
+            accept="application/json"
+            style="display:none"
+            onchange="importarJSON(this.files[0]); this.value='';"
+            aria-label="Seleccionar archivo JSON para importar"
+          >
+        </label>
       </div>
       <ul id="todasLasListas"></ul>
       <button id="btnCargarMas" onclick="cargarMasListas()" style="display:none; margin-top: 10px;">
         Mostrar otros 5
       </button>
-    </section>
+    </section>    
 
     <!-- Sección Notificaciones (con filtro "Hasta fecha") -->
     <section id="notificaciones" class="seccion oculto">
@@ -154,11 +210,57 @@
     <!-- Sección Eventos -->
     <section id="eventos" class="seccion oculto">
       <h2>📅 Eventos</h2>
+
+      <!-- Filtros: lugar + rango de fechas -->
+      <div style="margin-bottom:0.5em;">
+        <input
+          type="text"
+          id="filtroLugarEventos"
+          placeholder="Filtrar por lugar..."
+          oninput="refrescarEventosFiltrados(true)"
+        />
+
+        <!-- Rango (Flatpickr) -->
+        <input
+          type="text"
+          id="rangoFechasEventos"
+          placeholder="Rango de fechas"
+          aria-label="Rango de fechas (inicio y fin)"
+          style="max-width:240px;"
+        />
+
+        <!-- Inputs ocultos que usa la lógica JS -->
+        <input
+          type="date"
+          id="fechaDesdeEventos"
+          aria-label="Desde"
+          onchange="refrescarEventosFiltrados(true)"
+          style="display:none"
+        />
+        <input
+          type="date"
+          id="fechaHastaEventos"
+          aria-label="Hasta"
+          onchange="refrescarEventosFiltrados(true)"
+          style="display:none"
+        />
+
+        <button type="button" id="btnLimpiarFechasEventos" onclick="limpiarFechasEventos()">
+          Limpiar fechas
+        </button>
+      </div>
+
       <ul id="listaEventos"></ul>
     </section>
+
   </main>
 
-  <div id="mensaje" class="mensaje oculto"></div>
+  <div id="mensaje" class="mensaje oculto" role="status" aria-live="polite"></div>
+
+  <!-- Flatpickr para el rango de fechas -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/es.js"></script>  
 
   <script type="module" src="./script.js"></script>
 </body>

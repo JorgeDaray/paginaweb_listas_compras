@@ -1,13 +1,36 @@
 // ---------- Inicio modificado de script.js (dynamic firebase loader) ----------
-/*
-  Antes tenías imports estáticos. Los convertimos a dinámica para:
-   - permitir que la app cargue aunque no se puedan descargar los módulos (modo offline)
-   - seguir funcionando cuando el SW entregue los módulos cacheados
-*/
+
+// ===== Multi-tab coordinator (elige 1 pestaña líder) =====
+export const TAB_ID = `${Date.now()}_${Math.random().toString(36).slice(2)}`;
+const bc = ("BroadcastChannel" in window) ? new BroadcastChannel("listasapp:v1") : null;
+
+export let isLeaderTab = true; // se decide tras la elección
+export const leaderElectionReady = new Promise((resolve) => {
+  if (!bc) { isLeaderTab = true; resolve(true); return; }
+
+  const contenders = new Set([TAB_ID]);
+
+  try { bc.postMessage({ type: "candidate", id: TAB_ID }); } catch {}
+
+  bc.onmessage = (ev) => {
+    const d = ev.data || {};
+    if (d.type === "candidate" && d.id) contenders.add(d.id);
+    if (d.type === "iamleader" && d.id && d.id !== TAB_ID) isLeaderTab = false;
+  };
+
+  // pequeña ventana para oír a otras pestañas (evita “nadie es líder”)
+  setTimeout(() => {
+    const leaderId = [...contenders].sort()[0];
+    isLeaderTab = (leaderId === TAB_ID);
+    if (isLeaderTab) { try { bc.postMessage({ type: "iamleader", id: TAB_ID }); } catch {} }
+    console.log("Leader?", isLeaderTab, "tab:", TAB_ID);
+    resolve(isLeaderTab);
+  }, 200);
+});
 
 let firebaseLoaded = false;
 let initializeApp, getAnalytics, getFirestore, collection, addDoc, query, orderBy, limit, deleteDoc,
-    doc, updateDoc, serverTimestamp, getDoc, onSnapshot, enableIndexedDbPersistence;
+    doc, updateDoc, serverTimestamp, getDoc, onSnapshot, enableIndexedDbPersistence, initializeFirestore;
 
 let db = null;
 let analytics = null;
@@ -25,6 +48,7 @@ async function initFirebase() {
     // dentro de initFirebase(), justo después de obtener modFirestore:
     writeBatch = modFirestore.writeBatch;
     getDocs = modFirestore.getDocs; // opcional si lo usarás
+    initializeFirestore = modFirestore.initializeFirestore;
     // (asegúrate de declarar estas variables arriba similar a las demás)
 
     // asignar referencias
@@ -47,8 +71,14 @@ async function initFirebase() {
     // inicializar app/analytics/db
     const app = initializeApp(firebaseConfig);
     try { analytics = getAnalytics(app); } catch (e) { /* analytics puede fallar en algunos entornos */ }
-    db = getFirestore(app);
-
+    try {
+      db = initializeFirestore(app, {
+        ignoreUndefinedProperties: true,
+        experimentalAutoDetectLongPolling: true, // se adapta a redes raras
+      });
+    } catch {
+      db = getFirestore(app); // fallback
+    }
     firebaseLoaded = true;
     console.log("Firebase cargado dinámicamente.");
     return true;
@@ -109,6 +139,28 @@ const debounced = (fn, wait = 500) => {
     t = setTimeout(() => fn(...args), wait);
   };
 };
+
+function setFiltroListas(scope){ // 'todas' | 'pendientes'
+  const btnTodas = document.getElementById('btnTodas');
+  const btnPend = document.getElementById('btnPendientes');
+
+  const activar = (btn, on) => {
+    if (!btn) return;
+    btn.classList.toggle('active', !!on);
+    btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+  };
+
+  if (scope === 'pendientes'){
+    activar(btnPend, true);
+    activar(btnTodas, false);
+    mostrarListasFirebase(true, true);
+  } else {
+    activar(btnTodas, true);
+    activar(btnPend, false);
+    mostrarListasFirebase(true, false);
+  }
+}
+window.setFiltroListas = setFiltroListas;
 
 // Reemplaza llamadas a actualizarNotificaciones() por debouncedActualizarNotificaciones()
 // si quieres evitar ejecuciones en ráfaga:
@@ -265,26 +317,23 @@ async function persistCacheToIndexedDB() {
 let _persistScheduled = null;
 
 function schedulePersistCacheToIndexedDB(delay = 1200) {
-  // Si ya hay programado, limpia todos sus timeout ids
   if (_persistScheduled && Array.isArray(_persistScheduled.timeoutIds)) {
     _persistScheduled.timeoutIds.forEach(id => clearTimeout(id));
     _persistScheduled = null;
   }
-
   return new Promise((resolve) => {
-    const timeoutIds = scheduleTimeout(delay, async () => {
-      try {
-        await persistCacheToIndexedDB();
-      } catch (e) {
-        console.warn("persistCache error:", e);
-      } finally {
-        _persistScheduled = null;
-        resolve();
-      }
-    });
-
-    // guarda todos los ids para poder cancelarlos si se vuelve a programar
-    _persistScheduled = { timeoutIds };
+    const run = async () => {
+      try { await persistCacheToIndexedDB(); }
+      catch(e){ console.warn("persistCache error:", e); }
+      finally { _persistScheduled = null; resolve(); }
+    };
+    if ('requestIdleCallback' in window) {
+      const id = requestIdleCallback(run, { timeout: delay });
+      _persistScheduled = { timeoutIds: [id] };
+    } else {
+      const timeoutIds = scheduleTimeout(delay, run);
+      _persistScheduled = { timeoutIds };
+    }
   });
 }
 
@@ -678,7 +727,7 @@ function esPendientePorFechaOnly(lista) {
 
 /* ======= MONTHLY HELPERS (usar cache) ======= */
 async function advanceMonthlyIfPastForAll() {
-  if (!navigator.onLine || !canUseFirestore()) return;
+  if (!navigator.onLine || !canUseFirestore() || typeof writeBatch !== 'function') return;
   if (isBulkUpdating) return;
   isBulkUpdating = true;
   try {
@@ -807,6 +856,25 @@ function updateListCountDisplay(filteredTotal, totalStored) {
   cont.innerHTML = `Mostrando <strong>${filteredTotal}</strong> de <strong>${totalStored}</strong> listas guardadas.`;
 }
 
+function updateEventsCountDisplay(filteredTotal, totalStored) {
+  const contenedor = document.getElementById("eventos");
+  if (!contenedor) return;
+
+  let cont = document.getElementById("contadorEventos");
+  if (!cont) {
+    cont = document.createElement("div");
+    cont.id = "contadorEventos";
+    cont.style.margin = "6px 0";
+    cont.style.fontWeight = "700";
+    cont.style.color = "#374151";
+    // insertar justo antes de la UL de eventos
+    const ul = document.getElementById("listaEventos");
+    if (ul) contenedor.insertBefore(cont, ul);
+    else contenedor.appendChild(cont);
+  }
+  cont.innerHTML = `Mostrando <strong>${filteredTotal}</strong> de <strong>${totalStored}</strong> eventos.`;
+}
+
 /* ================= FILTRO Y CÁLCULO: Notificaciones hasta una fecha ================= */
 
 // key localStorage para persistir el filtro
@@ -828,15 +896,6 @@ function setNotifsFilterEndDate(dateStrOrNull) {
   } else {
     localStorage.setItem(NOTIFS_FILTER_KEY, dateStrOrNull);
   }
-}
-
-// Formatea un Date -> "yyyy-mm-dd" para inputs (útil)
-function formatDateForInput(d) {
-  if (!d) return '';
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
 }
 
 /**
@@ -951,7 +1010,7 @@ function setupNotifsFilterUI() {
   // inicializar input con valor guardado o vacío (NO poner heurístico por defecto aquí)
   const saved = getNotifsFilterEndDate();
   if (saved) {
-    input.value = formatDateForInput(saved);
+    input.value = formatDateToInput(saved);
   } else {
     input.value = ""; // dejar vacío para que el usuario elija
   }
@@ -991,29 +1050,23 @@ function setupNotifsFilterUI() {
 // Esta función aplica el filtro en memoria y manda a renderizar lista + summary
 function applyNotifsFilterAndRender() {
   const endDate = getNotifsFilterEndDate(); // Date | null
-  // obtenemos pendientes (por defecto sin eventos) y filtramos por ventana original + filtro final
   let pendientes = Array.from(listasCache.values()).filter(l => esPendientePorFechaOnly(l) && !l.isEvento);
 
   if (endDate) {
-    // filtrar por fecha <= endDate
     pendientes = pendientes.filter(l => {
       const f = parseFechaFromString(l.fecha);
       if (!f) return false;
       return startOfDay(f).getTime() <= startOfDay(endDate).getTime();
     });
-    // render lista usando las pendientes ya filtradas
+    // Render y resumen; el badge lo actualiza internamente renderListaNotificaciones
     renderListaNotificaciones(pendientes);
     updateNotifsSummaryWithFilter(endDate);
-    // actualizar badge con el total original (no solo mostradas) o con el total filtrado según prefieras
-    renderBadge(pendientes.length);
   } else {
-    // sin filtro: usa comportamiento por defecto (paginado dentro de renderListaNotificaciones)
     const pendientesDefault = Array.from(listasCache.values()).filter(l => esPendientePorFechaOnly(l) && !l.isEvento);
-    // restauramos el contador inicial y se deja que renderListaNotificaciones pagine
     notificacionesMostradasCount = NOTIFICATIONS_PAGE_INCREMENT; // opcional
     renderListaNotificaciones(pendientesDefault);
     updateNotifsSummaryWithFilter(null);
-    renderBadge(pendientesDefault.length);
+    // Nada de renderBadge aquí
   }
 }
 
@@ -1189,7 +1242,7 @@ async function actualizarNotificaciones(listasExternas = null) {
 
     // --- marcar expiradas / caducadas (coleccionar cambios primero) ---
     const hoy = startOfDay(new Date());
-    const pendingEstadoUpdates = []; // { id, estado, cachedUpdated }
+    const pendingEstadoUpdates = []; // { id, estado }
 
     for (const l of listas) {
       try {
@@ -1198,50 +1251,45 @@ async function actualizarNotificaciones(listasExternas = null) {
           const nuevoEstado = l.isEvento ? 'caducado' : 'expirada';
           if (String(l.estado || '') !== nuevoEstado) {
             pendingEstadoUpdates.push({ id: l.id, estado: nuevoEstado });
-            // actualizar cache local inmediatamente para no provocar inconsistencia visual
-            listasCache.set(l.id, { ...l, estado: nuevoEstado });
+            listasCache.set(l.id, { ...l, estado: nuevoEstado }); // refresco local inmediato
           }
         }
       } catch(e){ console.error("Error procesando expiradas:", e); }
     }
 
-    // Aplicar writes en batch si hay cambios y hay Firestore disponible
     if (pendingEstadoUpdates.length > 0 && navigator.onLine && canUseFirestore() && typeof writeBatch === 'function') {
       try {
         const BATCH_SIZE = 50;
         for (let i = 0; i < pendingEstadoUpdates.length; i += BATCH_SIZE) {
           const chunk = pendingEstadoUpdates.slice(i, i + BATCH_SIZE);
           const batch = writeBatch(db);
-          chunk.forEach(u => {
-            const ref = doc(db, 'listas', u.id);
-            batch.update(ref, { estado: u.estado });
-          });
+          chunk.forEach(u => batch.update(doc(db, 'listas', u.id), { estado: u.estado }));
           await batch.commit();
           incrClientWriteCounter(chunk.length);
         }
-        // persistimos cache local tras los commits
         await schedulePersistCacheToIndexedDB().catch(()=>{});
       } catch (e) {
         console.error("Error aplicando estados en batch:", e);
-        // Si falla el batch, no abortamos: la cache ya fue actualizada localmente.
       }
     } else if (pendingEstadoUpdates.length > 0) {
-      // offline o writeBatch no disponible -> solo persistir cache local
       await schedulePersistCacheToIndexedDB().catch(()=>{});
     }
 
-    // --- continuar con resto de la función (no modificado) ---
     const pendientesPorFecha = listas.filter(l => esPendientePorFechaOnly(l) && !l.isEvento);
-    const eventosPorFecha = listas.filter(l => esPendientePorFechaOnly(l) && l.isEvento);
+    const eventosPorFecha    = listas.filter(l => esPendientePorFechaOnly(l) &&  l.isEvento);
 
-    renderListaNotificaciones(pendientesPorFecha);
+    // Eventos (su badge lo maneja renderEvents)
     renderEvents(eventosPorFecha);
+
+    // Notifs: se delega a applyNotifsFilterAndRender -> renderListaNotificaciones (ahí se actualiza el badge)
     applyNotifsFilterAndRender();
 
+    // Reagendar timers
     pendientesPorFecha.forEach(lista => scheduleNotificationsForList(lista));
     eventosPorFecha.forEach(lista => scheduleNotificationsForList(lista));
 
-    renderMenuBadge(pendientesPorFecha.length, 'notifs');
+    // ⛔️ Importante: NO tocar aquí el badge de notifs (evita parpadeo)
+    // renderMenuBadge(pendientesPorFecha.length, 'notifs');  // <-- eliminado
 
   } catch(e) { console.error("Error actualizarNotificaciones:", e); }
 }
@@ -1301,16 +1349,47 @@ function renderEvents(eventos) {
   if (!ul) return;
   ul.innerHTML = "";
 
+  // === Filtros por lugar y rango (si ya los tienes) ===
+  const filtroLugar = normalizarTexto(document.getElementById("filtroLugarEventos")?.value || "");
+  const desdeStr = document.getElementById("fechaDesdeEventos")?.value || "";
+  const hastaStr = document.getElementById("fechaHastaEventos")?.value || "";
+
+  let desde = desdeStr ? parseFechaFromString(desdeStr) : null;
+  let hasta = hastaStr ? parseFechaFromString(hastaStr) : null;
+  if (desde && hasta && desde > hasta) { const tmp = desde; desde = hasta; hasta = tmp; }
+
+  if (filtroLugar) {
+    eventos = eventos.filter(l => normalizarTexto(l.lugar || "").includes(filtroLugar));
+  }
+  if (desde || hasta) {
+    const fromDay = desde ? startOfDay(desde) : null;
+    const toDayExclusive = hasta ? addDays(startOfDay(hasta), 1) : null; // inclusivo
+    eventos = eventos.filter(l => {
+      const f = parseFechaFromString(l.fecha);
+      if (!f) return false;
+      if (fromDay && f < fromDay) return false;
+      if (toDayExclusive && f >= toDayExclusive) return false;
+      return true;
+    });
+  }
+
+  // === NUEVO: calcular totales y mostrar contador ===
+  const totalStored = Array.from(listasCache.values())
+    .filter(l => esPendientePorFechaOnly(l) && l.isEvento).length;
+  const filteredTotal = eventos.length;
+  updateEventsCountDisplay(filteredTotal, totalStored);
+
   if (!eventos || eventos.length === 0) {
     const li = document.createElement("li");
-    li.textContent = "No hay eventos próximos.";
+    li.textContent = "No hay eventos que coincidan con el filtro.";
     ul.appendChild(li);
     renderMenuBadge(0, 'events');
     return;
   }
 
-  // ordenar ascendente por fecha
+  // ordenar, paginar y renderizar como ya lo haces
   eventos.sort((a,b) => parseFechaFromString(a.fecha) - parseFechaFromString(b.fecha));
+
   const total = eventos.length;
   const mostradas = eventos.slice(0, eventosMostradosCount);
 
@@ -1322,29 +1401,53 @@ function renderEvents(eventos) {
     li.className = "notificacion-item";
     li.dataset.id = lista.id;
 
-    // parse fecha y calculos
     const fecha = parseFechaFromString(lista.fecha);
     const dias = calcularDiasRestantes(fecha);
     const hoy = startOfDay(new Date());
     if (!lista.pagoMensual && fecha && startOfDay(fecha).getTime() < hoy.getTime()) {
       lista.estado = 'caducado';
     }
+
     const estadoTexto = lista.estado === 'caducado' ? `Evento caducado` :
-                       dias === 0 ? "Vence hoy" :
-                       dias < 0 ? `Venció hace ${Math.abs(dias)} día(s)` :
-                       `Vence en ${dias} día(s)`;
+                        dias === 0 ? "Vence hoy" :
+                        dias < 0 ? `Venció hace ${Math.abs(dias)} día(s)` :
+                        `Vence en ${dias} día(s)`;
+
     const totalPrecio = Array.isArray(lista.productos) ? lista.productos.reduce((s,p)=>s+(p.precio||0),0).toFixed(2) : "0.00";
     const colorsClass = lista.estado === 'caducado' ? 'event-caducado' : classForDiasEventos(dias);
 
     // crear partes de fecha para la caja (día y mes corto)
-    let dayStr = '--';
-    let monthStr = '---';
+    let dayStr = '--', monthStr = '---';
     if (fecha && !isNaN(fecha)) {
       dayStr = String(fecha.getDate());
       monthStr = fecha.toLocaleString('es-ES', { month: 'short' }).replace(/\./g,'');
     }
 
-    // innerHTML minimalista (detalle oculto por defecto)
+    // === Toolbar (mismos botones que en "Ver listas", adaptados a eventos) ===
+    const calendarBtnHTML =
+      `<a class="btn btn--primary btn-google-calendar"
+          href="${crearGoogleCalendarLink(lista, { allDay: false, hour: NOTIFY_HOUR || 9, durationMinutes: 60 })}"
+          target="_blank" rel="noopener noreferrer">
+          <i class="fa-solid fa-calendar-plus" aria-hidden="true"></i> Añadir a Google Calendar
+       </a>`;
+
+    const icsBtnHTML =
+      `<button type="button"
+              class="btn btn--secondary btn-download-ics"
+              data-lista-id="${escapeHtml(lista.id)}">
+         <i class="fa-solid fa-file-arrow-down" aria-hidden="true"></i> Descargar .ics
+       </button>`;
+
+    const btnHechoHTML =
+      `<button class="btn btn--ghost accion-marcar" data-id="${lista.id}">
+         <i class="fa-solid fa-check" aria-hidden="true"></i> Hecho
+       </button>`;
+
+    const btnDescartarHTML =
+      `<button class="btn btn--danger accion-descartar" data-id="${lista.id}">
+         <i class="fa-solid fa-ban" aria-hidden="true"></i> Descartar
+       </button>`;
+
     li.innerHTML = `
       <div class="lista-resumen event-resumen ${colorsClass}" tabindex="0" role="button"
            aria-expanded="false" aria-controls="detalle-productos-${lista.id}">
@@ -1362,58 +1465,50 @@ function renderEvents(eventos) {
       </div>
 
       <div class="detalle-productos oculto" id="detalle-productos-${lista.id}" style="margin-top:8px; padding:10px; border-radius:6px; border:1px solid #eee; background:#fff;">
-        <div style="display:flex; justify-content:space-between; align-items:center;">
-          <div style="font-weight:700;">Productos (${(lista.productos||[]).length})</div>
-          <div>
-            <a class="btn-google-calendar" href="${crearGoogleCalendarLink(lista, { allDay: false, hour: NOTIFY_HOUR || 9, durationMinutes: 60 })}" target="_blank" rel="noopener noreferrer" style="margin-right:8px;">➕ Añadir</a>
-            <button class="btn-download-ics" data-lista-id="${escapeHtml(lista.id)}" style="margin-right:8px;">⬇️ .ics</button>
-            <button class="accion-marcar" data-id="${lista.id}" style="margin-right:6px;">Hecho</button>
-            <button class="accion-descartar" data-id="${lista.id}">Descartar</button>
-          </div>
+        <div class="acciones-lista">
+          ${calendarBtnHTML}
+          ${icsBtnHTML}
+          <div class="spacer"></div>
+          ${btnHechoHTML}
+          ${btnDescartarHTML}
         </div>
         <ul style="margin-top:8px;">
-          ${(Array.isArray(lista.productos) && lista.productos.length) ? lista.productos.map(p => `<li>${escapeHtml(p.nombre)} — $${(p.precio||0).toFixed(2)}${p.descripcion ? ` — ${escapeHtml(p.descripcion)}` : ''}</li>`).join('') : '<li>(sin productos)</li>'}
+          ${(Array.isArray(lista.productos) && lista.productos.length)
+            ? lista.productos.map(p => `<li>${escapeHtml(p.nombre)} — $${(p.precio||0).toFixed(2)}${p.descripcion ? ` — ${escapeHtml(p.descripcion)}` : ''}</li>`).join('')
+            : '<li>(sin productos)</li>'}
         </ul>
       </div>
     `;
 
-    // referencias a elementos recién creados
     const resumenEl = li.querySelector('.event-resumen');
     const detalleEl = li.querySelector(`#detalle-productos-${lista.id}`);
 
-    // Helper para togglear detalle y actualizar aria-expanded
     const toggleDetalle = (opts = {}) => {
       if (!detalleEl) return;
-      // si opts.force === true -> abrir, if force === false -> cerrar, else toggle
       let opened;
       if (typeof opts.force === 'boolean') {
         if (opts.force) detalleEl.classList.remove('oculto');
         else detalleEl.classList.add('oculto');
         opened = !detalleEl.classList.contains('oculto');
       } else {
-        const toggledClosed = detalleEl.classList.toggle('oculto'); // true => ahora tiene clase oculto
+        const toggledClosed = detalleEl.classList.toggle('oculto');
         opened = !toggledClosed;
       }
       if (resumenEl) resumenEl.setAttribute('aria-expanded', String(opened));
     };
 
-    // Click en la tarjeta: toggle, salvo que el click sea en un botón/enlace interno
     resumenEl.addEventListener('click', (e) => {
       if (e.target.closest('button') || e.target.closest('a')) return;
       toggleDetalle();
     });
-
-    // Soporte teclado: Enter / Space para abrir/cerrar (accesible)
     resumenEl.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' || e.key === ' ') {
-        // si el foco está en un control interno, no interferir
         if (e.target.closest('button') || e.target.closest('a')) return;
-        e.preventDefault();
-        toggleDetalle();
+        e.preventDefault(); toggleDetalle();
       }
     });
 
-    // Botones internos (marcar / descartar / ics)
+    // Listeners existentes siguen funcionando con estas clases:
     li.querySelectorAll(".accion-marcar").forEach(btn => btn.addEventListener("click", async (ev) => {
       ev.stopPropagation();
       const id = btn.dataset.id;
@@ -1439,7 +1534,7 @@ function renderEvents(eventos) {
     ul.appendChild(li);
   });
 
-  // footer paginación (igual que antes)
+  // footer paginación
   const footerLi = document.createElement("li");
   footerLi.className = "notifs-footer";
   footerLi.style.paddingTop = "8px";
@@ -1455,14 +1550,12 @@ function renderEvents(eventos) {
     btnMas.onclick = (e) => { e.preventDefault(); cargarMasEventos(); };
     footerLi.appendChild(btnMas);
   }
-
   if (mostradas.length > EVENTS_PAGE_INCREMENT) {
     const btnMenos = document.createElement("button");
     btnMenos.textContent = "Mostrar menos";
     btnMenos.onclick = (e) => { e.preventDefault(); mostrarMenosEventos(); };
     footerLi.appendChild(btnMenos);
   }
-
   if (footerLi.childElementCount > 0) ul.appendChild(footerLi);
 }
 
@@ -1485,8 +1578,8 @@ async function marcarListaComoHecha(id) {
         await advanceMonthlyList(lista);
         mostrarMensaje("Pago mensual avanzado en la nube.", "success");
       } else {
-        const nuevaFecha = formatDateForInput(addMonthsKeepDay(parseFechaFromString(lista.fecha), 1));
-        const todayStr = formatDateForInput(new Date());
+        const nuevaFecha = formatDateToInput(addMonthsKeepDay(parseFechaFromString(lista.fecha), 1));
+        const todayStr = formatDateToInput(new Date());
         const updates = loadPendingUpdates();
         updates[id] = { fecha: nuevaFecha, _notificacionDescartada: false, estado: 'pendiente', completada: false, ultimoPagoFecha: todayStr, ultimoPagoGuardadoAt: new Date().toISOString() };
         savePendingUpdates(updates);
@@ -1620,71 +1713,173 @@ function guardarCambiosOffline(idLista, datosLista) {
 /* ======= INTERFAZ: mostrarListas, consultas, sugerencias, editar (usar cache) ======= */
 let listasMostradasCount = 5;
 
+// Reemplaza COMPLETA tu función por esta versión:
 function mostrarListasDesdeCache(resetCount=false, soloPendientes=false) {
-  if (resetCount) listasMostradasCount = 5;
-  const filtroLugar = normalizarTexto(document.getElementById("filtroLugarListas")?.value || "");
   try {
-    let listas = Array.from(listasCache.values()).sort((a,b) => parseFechaFromString(b.fecha) - parseFechaFromString(a.fecha));
+    if (resetCount) listasMostradasCount = 5;
+
+    const filtroLugar = normalizarTexto(document.getElementById("filtroLugarListas")?.value || "");
+
+    // 1) Base ordenada por fecha DESC
+    let listas = Array.from(listasCache.values())
+      .sort((a,b) => parseFechaFromString(b.fecha) - parseFechaFromString(a.fecha));
+
+    // 2) Filtro por lugar
     listas = listas.filter(l => normalizarTexto(l.lugar || "").includes(filtroLugar));
+
+    // 3) Filtro "solo pendientes"
     if (soloPendientes) {
-      listas = listas.filter(l => l.estado === "pendiente" || (Array.isArray(l.productos) && l.productos.some(p => p.precio === 0)));
+      listas = listas.filter(l =>
+        l.estado === "pendiente" ||
+        (Array.isArray(l.productos) && l.productos.some(p => p.precio === 0))
+      );
     }
-    // total almacenadas que cumplen filtro (antes del slice/paginación)
-    const todasCoincidentes = Array.from(listasCache.values()).filter(l => normalizarTexto(l.lugar || "").includes(filtroLugar));
-    const totalStored = todasCoincidentes.length;
-    const filteredTotal = listas.length; // aquí listas ya está filtrada por filtroLugar (sin slice)
-    // actualizamos visualmente el contador (crea el contenedor si no existe)
-    updateListCountDisplay(filteredTotal, totalStored);   
-    listas = listas.slice(0, listasMostradasCount);
+
+    // 4) Filtro por rango de fechas (INCLUSIVO)
+    const desdeStr = document.getElementById("fechaDesdeListas")?.value || "";
+    const hastaStr = document.getElementById("fechaHastaListas")?.value || "";
+    let desde = desdeStr ? parseFechaFromString(desdeStr) : null;
+    let hasta = hastaStr ? parseFechaFromString(hastaStr) : null;
+
+    // Corregir si el usuario invierte el rango
+    if (desde && hasta && desde > hasta) { const tmp = desde; desde = hasta; hasta = tmp; }
+
+    if (desde || hasta) {
+      const fromDay = desde ? startOfDay(desde) : null;
+      const toDayExclusive = hasta ? addDays(startOfDay(hasta), 1) : null; // < toDayExclusive ⇒ inclusivo
+      listas = listas.filter(l => {
+        const f = parseFechaFromString(l.fecha);
+        if (!f) return false;
+        if (fromDay && f < fromDay) return false;
+        if (toDayExclusive && f >= toDayExclusive) return false;
+        return true;
+      });
+    }
+
+    // 5) Conteo tras filtros (antes de la paginación)
+    const filteredTotal = listas.length;
+
+    // 6) Paginación
+    const pageItems = listas.slice(0, listasMostradasCount);
+
+    // 7) Render
     const ul = document.getElementById("todasLasListas");
     if (!ul) return;
     ul.innerHTML = "";
-    if (listas.length === 0) {
+
+    if (pageItems.length === 0) {
       ul.innerHTML = "<li>No hay listas guardadas que coincidan con el filtro.</li>";
-      const btn = document.getElementById("btnCargarMas"); if (btn) btn.style.display = "none";
+      const btn = document.getElementById("btnCargarMas");
+      if (btn) btn.style.display = "none";
+      updateListCountDisplay(0, Array.from(listasCache.values()).length);
       actualizarNotificaciones();
       return;
     }
-    listas.forEach(lista => {
+
+    // El contador refleja las coincidencias tras TODO el filtrado
+    updateListCountDisplay(filteredTotal, Array.from(listasCache.values()).length);
+
+    pageItems.forEach(lista => {
       const total = (lista.productos || []).reduce((sum,p)=>sum+(p.precio||0),0).toFixed(2);
+
       const pendienteFecha = lista.estado === "pendiente";
       const pendienteProducto = Array.isArray(lista.productos) && lista.productos.some(p => p.precio === 0);
       let badge = "";
       if (pendienteFecha) badge += '🕒 <strong style="color:#fbc02d">PENDIENTE (Fecha)</strong><br>';
       if (pendienteProducto) badge += '⌛ <strong style="color:#fbc02d">Productos pendientes</strong><br>';
       if (lista.pagoMensual) badge += '📆 <strong style="color:#3b82f6">PAGO MENSUAL</strong><br>';
+
       const productosHTML = (lista.productos || []).map(p => {
         const iconoP = p.precio === 0 ? `<i class="fa-solid fa-hourglass-half" title="Precio 0" style="color: #f59e0b;"></i>` : "";
         return `<li>${escapeHtml(p.nombre)} ${iconoP} — $${(p.precio||0).toFixed(2)}${p.descripcion ? ` — ${escapeHtml(p.descripcion)}` : ""}</li>`;
       }).join("");
-      // Enlaza directamente a Google Calendar usando la versión "por hora" (opción preferente)
-      const calendarBtnHTML = `<a class="btn-google-calendar" href="${crearGoogleCalendarLink(lista, { allDay: false, hour: NOTIFY_HOUR || 9, durationMinutes: 60 })}" target="_blank" rel="noopener noreferrer" style="margin-right:8px;">➕ Añadir a Google Calendar</a>`;
-      const icsBtnHTML = `<button type="button" class="btn-download-ics" data-lista-id="${escapeHtml(lista.id)}" style="margin-left:8px;">⬇️ Descargar .ics</button>`;
-      ul.innerHTML += `
-        <li data-id="${lista.id}">
-          <div class="lista-item resumen" onclick="alternarDetalle('${lista.id}')">
-            📅 <strong>${formatearFecha(lista.fecha)}</strong> — 🏪 <em>${escapeHtml(lista.lugar)}</em> — 💰 $${total}
-            <div class="badge-pendiente">${badge}</div>
-          </div>
-          <div id="detalle-${lista.id}" class="detalle-lista oculto">
+
+      const calendarBtnHTML =
+        `<a class="btn btn--primary btn-google-calendar"
+            href="${crearGoogleCalendarLink(lista, { allDay: false, hour: NOTIFY_HOUR || 9, durationMinutes: 60 })}"
+            target="_blank" rel="noopener noreferrer">
+            <i class="fa-solid fa-calendar-plus" aria-hidden="true"></i> Añadir a Google Calendar
+        </a>`;
+
+      const icsBtnHTML =
+        `<button type="button"
+                class="btn btn--secondary btn-download-ics"
+                data-lista-id="${escapeHtml(lista.id)}">
+            <i class="fa-solid fa-file-arrow-down" aria-hidden="true"></i> Descargar .ics
+        </button>`;
+
+      const resumenHTML = `
+        <div class="lista-item resumen"
+             onclick="alternarDetalle(this)"
+             tabindex="0" role="button"
+             aria-expanded="false"
+             onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();alternarDetalle(this);}">
+          📅 <strong>${formatearFecha(lista.fecha)}</strong> — 🏪 <em>${escapeHtml(lista.lugar)}</em> — 💰 $${total}
+          <div class="badge-pendiente">${badge}</div>
+        </div>`;
+
+      const detalleHTML = `
+        <div class="detalle-lista oculto">
+          <div class="acciones-lista">
             ${calendarBtnHTML}
-            <ul>${productosHTML}</ul>
-            <button onclick="editarLista('${lista.id}')">✏️ Editar esta lista</button>
-            <button onclick="eliminarLista('${lista.id}')">🗑️ Eliminar esta lista</button>
+            ${icsBtnHTML}
+            <div class="spacer"></div>
+            <button class="btn btn--ghost" onclick="editarLista('${lista.id}')">
+              <i class="fa-solid fa-pen-to-square" aria-hidden="true"></i> Editar
+            </button>
+            <button class="btn btn--danger" onclick="eliminarLista('${lista.id}')">
+              <i class="fa-solid fa-trash" aria-hidden="true"></i> Eliminar
+            </button>
           </div>
-        </li>
-      `;
+          <ul class="productos-detalle">
+            ${productosHTML}
+          </ul>
+        </div>`;
+
+      ul.innerHTML += `<li data-id="${lista.id}">${resumenHTML}${detalleHTML}</li>`;
     });
+
+    // 8) Botón de paginación (alternar texto y acción)
     const btnCargar = document.getElementById("btnCargarMas");
-    if (btnCargar) btnCargar.style.display = (listas.length === listasMostradasCount) ? "block" : "none";
+    if (btnCargar) {
+      if (filteredTotal <= 5) {
+        btnCargar.style.display = "none";
+      } else {
+        btnCargar.style.display = "block";
+        if (listasMostradasCount >= filteredTotal) {
+          btnCargar.textContent = "Mostrar menos";
+          btnCargar.onclick = () => { mostrarMenosListas(); };
+        } else {
+          btnCargar.textContent = "Mostrar otros 5";
+          btnCargar.onclick = () => { cargarMasListas(); };
+        }
+      }
+    }
+
+    // 9) Actualizar panel de notificaciones (si aplica)
     actualizarNotificaciones();
-  } catch(e){ mostrarMensaje("Error cargando listas: " + e.message, "error"); console.error(e); }
+
+  } catch(e){
+    mostrarMensaje("Error cargando listas: " + (e.message || e), "error");
+    console.error(e);
+  }
 }
+
 function mostrarListasFirebase(resetCount=false, soloPendientes=false) {
   mostrarListasDesdeCache(resetCount, soloPendientes);
 }
 function cargarMasListas(){ listasMostradasCount += 5; mostrarListasFirebase(); }
-function alternarDetalle(id){ const detalle = document.getElementById(`detalle-${id}`); if (detalle) detalle.classList.toggle("oculto"); }
+function mostrarMenosListas() {
+  listasMostradasCount = 5;
+  mostrarListasFirebase();
+}
+window.mostrarMenosListas = mostrarMenosListas;
+function alternarDetalle(resumenEl){
+  const detalle = resumenEl.nextElementSibling;
+  if (!detalle) return;
+  const oculto = detalle.classList.toggle('oculto');
+  resumenEl.setAttribute('aria-expanded', oculto ? 'false' : 'true');
+}
 
 /* =========================
    mostrarResultadosConsulta
@@ -1927,7 +2122,9 @@ async function editarLista(id) {
         <div class="inputs-container">
           <input type="text" placeholder="Producto" class="producto-nombre" value="${escapeHtml(p.nombre)}" required oninput="mostrarSugerencias(this)" />
           <div class="sugerencias" aria-hidden="true"></div>
-          <input type="number" placeholder="Precio" class="producto-precio" value="${p.precio}" required />
+          <input type="number" placeholder="Precio" class="producto-precio"
+            value="${p.precio}" required step="0.01" min="0"
+            inputmode="decimal" autocomplete="off" onwheel="this.blur()" />
           <input type="text" placeholder="Descripción (opcional)" class="producto-desc" value="${escapeHtml(p.descripcion || "")}" />
         </div>
         <button type="button" class="eliminar-producto" onclick="eliminarProducto(this)">❌</button>
@@ -1950,16 +2147,36 @@ document.getElementById("formLista")?.addEventListener("submit", async (e) => {
   const hoy = startOfDay(new Date());
   const estado = startOfDay(fechaObj).getTime() >= hoy.getTime() ? "pendiente" : "normal";
   const productos = [];
-  let hayError = false;
-  document.querySelectorAll(".producto").forEach((p,i) => {
-    const nombre = p.querySelector(".producto-nombre").value.trim();
-    const precio = parseFloat(p.querySelector(".producto-precio").value);
-    const descripcion = p.querySelector(".producto-desc").value.trim();
-    if (!nombre) { mostrarMensaje(`El producto #${i+1} no tiene nombre.`, "error"); hayError = true; return; }
-    if (isNaN(precio) || precio < 0) { mostrarMensaje(`El producto "${nombre || "sin nombre"}" tiene un precio inválido.`, "error"); hayError = true; return; }
-    productos.push({ nombre, precio, descripcion });
-  });
-  if (hayError || productos.length === 0) return;
+let hayError = false;
+document.querySelectorAll(".producto").forEach((p,i) => {
+  const nombre = p.querySelector(".producto-nombre").value.trim();
+  const precioInput = p.querySelector(".producto-precio");
+  const descripcion = p.querySelector(".producto-desc").value.trim();
+
+  if (!nombre) {
+    mostrarMensaje(`El producto #${i+1} no tiene nombre.`, "error");
+    hayError = true; return;
+  }
+
+  // 1) Validación nativa (min/step, etc.)
+  if (precioInput && !precioInput.checkValidity()) {
+    precioInput.reportValidity();
+    hayError = true; return;
+  }
+
+  // 2) Normalización coma decimal y redondeo a 2
+  const raw = (precioInput?.value ?? "").trim().replace(',', '.');
+  const precio = Number(parseFloat(raw).toFixed(2));
+
+  if (Number.isNaN(precio) || precio < 0) {
+    mostrarMensaje(`El producto "${nombre || "sin nombre"}" tiene un precio inválido.`, "error");
+    hayError = true; return;
+  }
+
+  productos.push({ nombre, precio, descripcion });
+});
+
+if (hayError || productos.length === 0) return;
   const idLista = document.getElementById("idListaEditando").value;
   const esPagoMensual = !!document.getElementById("esPagoMensual") && document.getElementById("esPagoMensual").checked;
   const esEvento = !!document.getElementById("esEvento") && document.getElementById("esEvento").checked;
@@ -1985,10 +2202,26 @@ document.getElementById("formLista")?.addEventListener("submit", async (e) => {
           // así que nos aseguramos de conservarla (esto mantiene compatibilidad con la lógica previa).
           datos.estado = estado;
         } else {
-          datos._notificacionDescartada = true;
-        }
-      } else {
-        datos._notificacionDescartada = true;
+            // Mantener el valor previo si existe; no forzar a true.
+            const prevDesc = (prev && typeof prev._notificacionDescartada === 'boolean')
+              ? prev._notificacionDescartada
+              : false;
+            datos._notificacionDescartada = prevDesc;
+    
+            // Mantener 'completada' y 'estado' previos si no se reactivó
+            if (typeof prev?.completada === 'boolean') datos.completada = prev.completada;
+            if (typeof prev?.estado === 'string') datos.estado = prev.estado;
+          }
+    } else {
+        // Mantener el valor previo si existe; no forzar a true.
+        const prevDesc = (prev && typeof prev._notificacionDescartada === 'boolean')
+          ? prev._notificacionDescartada
+          : false;
+        datos._notificacionDescartada = prevDesc;
+
+        // Mantener 'completada' y 'estado' previos si no se reactivó
+        if (typeof prev?.completada === 'boolean') datos.completada = prev.completada;
+        if (typeof prev?.estado === 'string') datos.estado = prev.estado;
       }
       if (navigator.onLine && canUseFirestore()) {
         await updateDoc(doc(db, "listas", idLista), datos);
@@ -2027,7 +2260,9 @@ document.getElementById("formLista")?.addEventListener("submit", async (e) => {
       <div class="inputs-container">
         <input type="text" placeholder="Producto" class="producto-nombre" required oninput="mostrarSugerencias(this)" />
         <div class="sugerencias" aria-hidden="true"></div>
-        <input type="number" placeholder="Precio" class="producto-precio" required />
+        <input type="number" placeholder="Precio" class="producto-precio"
+          required step="0.01" min="0"
+          inputmode="decimal" autocomplete="off" onwheel="this.blur()" />
         <input type="text" placeholder="Descripción (opcional)" class="producto-desc" />
       </div>
       <button type="button" class="eliminar-producto" onclick="eliminarProducto(this)">❌</button>
@@ -2045,7 +2280,9 @@ function agregarProducto() {
     <div class="inputs-container">
       <input type="text" placeholder="Producto" class="producto-nombre" required oninput="mostrarSugerencias(this)" />
       <div class="sugerencias" aria-hidden="true"></div>
-      <input type="number" placeholder="Precio" class="producto-precio" required />
+      <input type="number" placeholder="Precio" class="producto-precio"
+        required step="0.01" min="0"
+        inputmode="decimal" autocomplete="off" onwheel="this.blur()" />
       <input type="text" placeholder="Descripción (opcional)" class="producto-desc" />
     </div>
     <button type="button" class="eliminar-producto" onclick="eliminarProducto(this)">❌</button>
@@ -2059,6 +2296,10 @@ function eliminarProducto(boton) { const divProducto = boton.parentElement; if (
 let isSyncingPending = false;
 
 window.addEventListener("online", async () => {
+  if (!isLeaderTab) { 
+    console.log("Online (no líder): omito sincronización de pendientes.");
+    return;
+  }
   mostrarMensaje("Conexión restablecida. Sincronizando cambios pendientes...", "info");
 
   // evitar colisiones concurrentes
@@ -2211,72 +2452,146 @@ window.addEventListener("online", async () => {
 
 window.addEventListener("offline", () => mostrarMensaje("Sin conexión. Las acciones quedarán guardadas localmente y se sincronizarán al reconectar.", "offline"));
 
+// Debounce también el render de listas (pega esto una sola vez junto a tus otros "debounced")
+const debouncedMostrarListas = debounced(() => mostrarListasFirebase(true), 250);
+
 /* ======= INICIALIZAR: onSnapshot listener para mantener cache en tiempo real (y carga inicial desde IndexedDB) ======= */
 let listasListenerUnsubscribe = null;
 
 async function startListasListener() {
-
   if (!canUseFirestore() || typeof collection !== 'function' || typeof onSnapshot !== 'function') {
     console.warn("startListasListener: Firestore o funciones no disponibles, listener no inicializado.");
     return;
-  }  
-  
+  }
+
+  // Si ya existía, desuscribir
   if (typeof listasListenerUnsubscribe === 'function') {
-    try { listasListenerUnsubscribe(); } catch(e){}
+    try { listasListenerUnsubscribe(); } catch(e) {}
     listasListenerUnsubscribe = null;
   }
 
   try {
     const colRef = collection(db, "listas");
-    listasListenerUnsubscribe = onSnapshot(colRef, async (snapshot) => {
-      snapshot.docChanges().forEach(change => {
-        const id = change.doc.id;
-        const data = { id, ...change.doc.data() };
-        if (change.type === "removed") {
-          listasCache.delete(id);
-          cancelScheduledNotificationsForList(id);
-          deleteOneFromIndexedDB(id).catch(()=>{});
-        } else {
-          listasCache.set(id, data);
-          saveOneToIndexedDB(data).catch(()=>{});
-        }
-      });
-      await schedulePersistCacheToIndexedDB().catch(()=>{});
-      if (isSyncingPending) {
+    listasListenerUnsubscribe = onSnapshot(
+      colRef,
+      (snapshot) => {
+        let touched = false;
+
+        snapshot.docChanges().forEach((change) => {
+          const id = change.doc.id;
+          const data = { id, ...change.doc.data() };
+
+          if (change.type === "removed") {
+            if (listasCache.has(id)) {
+              listasCache.delete(id);
+              cancelScheduledNotificationsForList(id);
+              deleteOneFromIndexedDB(id).catch(()=>{});
+              touched = true;
+            }
+          } else {
+            // Opcional: ignora escrituras locales aún no confirmadas por el servidor.
+            // if (change.doc.metadata?.hasPendingWrites) return;
+
+            listasCache.set(id, data);
+            saveOneToIndexedDB(data).catch(()=>{});
+            touched = true;
+          }
+        });
+
+        if (!touched) return;
+
+        // Persistimos y actualizamos con throttle/debounce
+        schedulePersistCacheToIndexedDB().catch(()=>{});
         debouncedActualizarNotificaciones();
-        mostrarListasFirebase(true);
-      } else {
-        actualizarNotificaciones(Array.from(listasCache.values()));
-        mostrarListasFirebase(true);
+        debouncedMostrarListas();
+      },
+      async (err) => {
+        console.error("onSnapshot listas error:", err);
+        mostrarMensaje("Error al conectar con Firestore; usando datos en caché.", "offline");
+
+        try {
+          await loadCacheFromIndexedDB();
+          debouncedActualizarNotificaciones();
+          debouncedMostrarListas();
+        } catch (e) {
+          console.error("Carga cache tras onSnapshot error fallida:", e);
+        }
+
+        try { if (typeof listasListenerUnsubscribe === 'function') listasListenerUnsubscribe(); } catch(e){}
+        listasListenerUnsubscribe = null;
       }
-    }, async (err) => {
-      console.error("onSnapshot listas error:", err);
-      mostrarMensaje("Error al conectar con Firestore; usando datos en caché.", "offline");
-      try {
-        await loadCacheFromIndexedDB();
-        actualizarNotificaciones(Array.from(listasCache.values()));
-        mostrarListasFirebase(true);
-      } catch(e) {
-        console.error("Carga cache tras onSnapshot error fallida:", e);
-      }
-      try { if (typeof listasListenerUnsubscribe === 'function') listasListenerUnsubscribe(); } catch(e){}
-      listasListenerUnsubscribe = null;
-    });
-  } catch(e) {
+    );
+  } catch (e) {
     console.error("startListasListener fallo:", e);
     mostrarMensaje("No se pudo iniciar la sincronización en tiempo real. Se usarán datos locales.", "offline");
-    try { await loadCacheFromIndexedDB(); } catch(err){ console.error(err); }
-    actualizarNotificaciones(Array.from(listasCache.values()));
-    mostrarListasFirebase(true);
+
+    try { await loadCacheFromIndexedDB(); } catch (err) { console.error(err); }
+
+    debouncedActualizarNotificaciones();
+    debouncedMostrarListas();
   }
 }
+
+/* ======= UX/validación para inputs .producto-precio ======= */
+(function wirePrecioInputs() {
+  // Reemplaza comas por punto mientras se escribe
+  document.addEventListener('input', (e) => {
+    const el = e.target;
+    if (!el.classList || !el.classList.contains('producto-precio')) return;
+    if (el.value.includes(',')) el.value = el.value.replace(/,/g, '.');
+  });
+
+  // Formatea a 2 decimales al salir del campo
+  document.addEventListener('blur', (e) => {
+    const el = e.target;
+    if (!el.classList || !el.classList.contains('producto-precio')) return;
+    const v = el.value.trim();
+    if (v === '') return;
+    const n = Number(v);
+    if (!Number.isNaN(n)) el.value = n.toFixed(2);
+  }, true);
+
+  // Evita notación exponencial y signos
+  document.addEventListener('keydown', (e) => {
+    const el = e.target;
+    if (!el.classList || !el.classList.contains('producto-precio')) return;
+    if (['e','E','+','-'].includes(e.key)) e.preventDefault();
+  });
+})();
 
 /* ======= INICIALIZAR ONLOAD (modificado para initFirebase + modo offline parcial) ======= */
 document.addEventListener("DOMContentLoaded", async () => {
   try {
+    await leaderElectionReady;  // <<< NUEVO: espera a saber si esta pestaña es líder
+    // NUEVO: solicitar almacenamiento persistente (evita eviction de IndexedDB/Cache)
+    if (navigator.storage && (navigator.storage.persist || navigator.storage.persisted)) {
+      try {
+        const already = typeof navigator.storage.persisted === "function"
+          ? await navigator.storage.persisted()
+          : false;
+
+        if (!already && typeof navigator.storage.persist === "function") {
+          const persisted = await navigator.storage.persist();
+          console.log("Persist storage:", persisted ? "garantizado" : "best-effort");
+        } else {
+          console.log("Persist storage: ya garantizado");
+        }
+
+        // (opcional) log de uso de almacenamiento
+        if (navigator.storage.estimate) {
+          const { quota, usage } = await navigator.storage.estimate();
+          if (quota && usage != null) {
+            const pct = ((usage / quota) * 100).toFixed(1);
+            console.log(`Almacenamiento usado: ${pct}% (${usage} de ${quota} bytes)`);
+          }
+        }
+      } catch (err) {
+        console.warn("No se pudo solicitar almacenamiento persistente:", err);
+      }
+    }
     const firebaseOk = await initFirebase();
 
-    if (firebaseOk && typeof enableIndexedDbPersistence === "function") {
+    if (firebaseOk && isLeaderTab && typeof enableIndexedDbPersistence === "function") {
       try {
         await enableIndexedDbPersistence(db);
         console.log("Persistencia IndexedDB habilitada.");
@@ -2292,16 +2607,18 @@ document.addEventListener("DOMContentLoaded", async () => {
           mostrarMensaje("No se pudo habilitar persistencia. Se usará almacenamiento local.", "offline");
         }
       }
+    } else if (firebaseOk && !isLeaderTab) {
+      console.log("Pestaña no líder: sin persistencia Firestore; sólo cache/local.");
     } else if (!firebaseOk) {
       mostrarMensaje("Modo offline: Firebase no disponible. Usando datos locales.", "offline");
     }
-
+    
     await loadCacheFromIndexedDB().catch((e) => { console.warn("loadCacheFromIndexedDB falló:", e); });
 
     mostrarSeccion("agregar");
     mostrarListasFirebase(true);
 
-    if (firebaseOk && typeof startListasListener === "function") {
+    if (firebaseOk && isLeaderTab && typeof startListasListener === "function") {
       try {
         startListasListener();
       } catch (e) {
@@ -2319,8 +2636,81 @@ document.addEventListener("DOMContentLoaded", async () => {
     document.getElementById("filtroTienda")?.addEventListener("input", mostrarResultadosConsultaDebounced);
     document.getElementById("filtroProducto")?.addEventListener("input", mostrarResultadosConsultaDebounced);
     document.getElementById("ordenarPor")?.addEventListener("change", mostrarResultadosConsultaDebounced);
-    document.getElementById("btnPendientes")?.addEventListener("click", () => mostrarListasFirebase(true, true));
-    document.getElementById("btnTodas")?.addEventListener("click", () => mostrarListasFirebase(true, false));
+    document.getElementById("btnPendientes")?.addEventListener("click", () => setFiltroListas('pendientes'));
+    document.getElementById("btnTodas")?.addEventListener("click", () => setFiltroListas('todas'));
+    
+    // Estado inicial (si quieres que arranque mostrando "Todas"):
+    setFiltroListas('todas');
+        
+    // ====== Rango de fechas con Flatpickr (un solo calendario) ======
+    try {
+      if (window.flatpickr) {
+        // Si ya había valores (p.ej. por estado previo), los usamos como default
+        const dEl = document.getElementById('fechaDesdeListas');
+        const hEl = document.getElementById('fechaHastaListas');
+        const defaultDate = (dEl?.value && hEl?.value) ? [dEl.value, hEl.value] : [];
+
+        window._fpRangoListas = flatpickr('#rangoFechasListas', {
+          mode: 'range',
+          dateFormat: 'Y-m-d',
+          locale: (window.flatpickr.l10ns && window.flatpickr.l10ns.es) ? window.flatpickr.l10ns.es : 'es',
+          allowInput: false,
+          defaultDate,
+          // cuando el usuario termina la selección (o cierra el calendario)
+          onClose(selectedDates) {
+            const desdeInput = document.getElementById('fechaDesdeListas');
+            const hastaInput = document.getElementById('fechaHastaListas');
+            const [start, end] = selectedDates;
+
+            if (desdeInput) desdeInput.value = start ? formatDateToInput(start) : '';
+            if (hastaInput) {
+              // Si eligió solo un día, tomamos mismo día como fin para que el filtro sea 1 día exacto
+              if (end) hastaInput.value = formatDateToInput(end);
+              else if (start) hastaInput.value = formatDateToInput(start);
+              else hastaInput.value = '';
+            }
+
+            mostrarListasFirebase(true);
+          },
+        });
+      } else {
+        console.warn('flatpickr no cargó; usarás los 2 inputs nativos.');
+        // Si no cargó la librería, ocultamos el rango y mostramos los inputs nativos
+        const r = document.getElementById('rangoFechasListas');
+        const d = document.getElementById('fechaDesdeListas');
+        const h = document.getElementById('fechaHastaListas');
+        if (r) r.style.display = 'none';
+        if (d) d.style.display = '';
+        if (h) h.style.display = '';
+      }
+    } catch (e) {
+      console.error('Error iniciando flatpickr:', e);
+    }
+
+    // ====== Rango de fechas para EVENTOS (un solo calendario) ======
+    try {
+      if (window.flatpickr) {
+        const dEv = document.getElementById('fechaDesdeEventos');
+        const hEv = document.getElementById('fechaHastaEventos');
+        const defaultDateEv = (dEv?.value && hEv?.value) ? [dEv.value, hEv.value] : [];
+
+        window._fpRangoEventos = flatpickr('#rangoFechasEventos', {
+          mode: 'range',
+          dateFormat: 'Y-m-d',
+          locale: (window.flatpickr.l10ns && window.flatpickr.l10ns.es) ? window.flatpickr.l10ns.es : 'es',
+          allowInput: false,
+          defaultDate: defaultDateEv,
+          onClose(selectedDates) {
+            const [start, end] = selectedDates;
+            if (dEv) dEv.value = start ? formatDateToInput(start) : '';
+            if (hEv) hEv.value = end ? formatDateToInput(end) : (start ? formatDateToInput(start) : '');
+            refrescarEventosFiltrados(true);
+          },
+        });
+      } else {
+        console.warn('flatpickr no cargó; usa los inputs nativos #fechaDesdeEventos/#fechaHastaEventos');
+      }
+    } catch(e){ console.error('Error iniciando flatpickr (eventos):', e); }
 
     rebuildScheduledTimeoutsFromStorage();
     actualizarNotificaciones();
@@ -2387,12 +2777,38 @@ document.addEventListener("DOMContentLoaded", async () => {
     // inicializar toggle menú (no anidar DOMContentLoaded)
     const btnMenu = document.getElementById('btnMenuToggle');
     const navMain = document.getElementById('mainNav');
+
     if (btnMenu && navMain) {
-      btnMenu.addEventListener('click', (e) => navMain.classList.toggle('open'));
-      // cerrar nav si se hace click fuera en móvil
+      // Helper para mantener .open y aria-expanded sincronizados
+      const setExpanded = (isOpen) => {
+        navMain.classList.toggle('open', isOpen);
+        btnMenu.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+      };
+
+      // Estado inicial (por si llega con .open desde CSS o un resize previo)
+      setExpanded(navMain.classList.contains('open'));
+
+      // Toggle con click en el botón
+      btnMenu.addEventListener('click', (e) => {
+        e.stopPropagation();
+        setExpanded(!navMain.classList.contains('open'));
+      });
+
+      // Cerrar si se hace click fuera
       document.addEventListener('click', (ev) => {
-        const isInside = ev.target.closest && (ev.target.closest('#mainNav') || ev.target.closest('#btnMenuToggle'));
-        if (!isInside && navMain.classList.contains('open')) navMain.classList.remove('open');
+        const isInside = ev.target.closest && (
+          ev.target.closest('#mainNav') || ev.target.closest('#btnMenuToggle')
+        );
+        if (!isInside && navMain.classList.contains('open')) {
+          setExpanded(false);
+        }
+      });
+
+      // (Opcional, pero recomendable) Cerrar con Escape para accesibilidad
+      document.addEventListener('keydown', (ev) => {
+        if (ev.key === 'Escape' && navMain.classList.contains('open')) {
+          setExpanded(false);
+        }
       });
     }
 
@@ -2401,6 +2817,46 @@ document.addEventListener("DOMContentLoaded", async () => {
     mostrarMensaje("Error inicializando la aplicación. Revisa la consola para más detalles.", "error");
   }
 });
+
+function limpiarFechasListas() {
+  const d = document.getElementById("fechaDesdeListas");
+  const h = document.getElementById("fechaHastaListas");
+  const r = document.getElementById("rangoFechasListas");
+
+  // NUEVO: limpiar el control de rango si existe
+  if (window._fpRangoListas && typeof window._fpRangoListas.clear === 'function') {
+    window._fpRangoListas.clear();
+  }
+  if (r) r.value = "";
+
+  if (d) d.value = "";
+  if (h) h.value = "";
+  mostrarListasFirebase(true);
+}
+window.limpiarFechasListas = limpiarFechasListas;
+
+function limpiarFechasEventos() {
+  const d = document.getElementById("fechaDesdeEventos");
+  const h = document.getElementById("fechaHastaEventos");
+  const r = document.getElementById("rangoFechasEventos");
+  if (window._fpRangoEventos && typeof window._fpRangoEventos.clear === 'function') {
+    window._fpRangoEventos.clear();
+  }
+  if (r) r.value = "";
+  if (d) d.value = "";
+  if (h) h.value = "";
+  refrescarEventosFiltrados(true);
+}
+window.limpiarFechasEventos = limpiarFechasEventos;
+
+function refrescarEventosFiltrados(reset=false){
+  if (reset) eventosMostradosCount = EVENTS_PAGE_INCREMENT;
+  const eventosBase = Array.from(listasCache.values())
+    .filter(l => esPendientePorFechaOnly(l) && l.isEvento);
+  renderEvents(eventosBase); // renderEvents aplicará los filtros de lugar/fechas
+}
+window.refrescarEventosFiltrados = refrescarEventosFiltrados;
+
 
 async function reactivateNotifications(id) {
   try {
@@ -2473,7 +2929,7 @@ function generarContenidoICS(lista, opts = {}) {
   if (!dtStartDate || isNaN(dtStartDate)) return null;
 
   const hour = (typeof opts.hour === 'number') ? opts.hour : (typeof NOTIFY_HOUR === 'number' ? NOTIFY_HOUR : 9);
-  const durationMinutes = Number(opts.durationMinutes || 120); // duración por defecto 2 horas
+  const durationMinutes = Number(opts.durationMinutes || 60); // duración por defecto 2 horas
 
   // inicio en la hora local indicada
   const startLocal = dateAtHour(dtStartDate, hour);
@@ -2541,9 +2997,64 @@ window.mostrarSeccion = function(id){
   document.querySelectorAll(".seccion").forEach(s=>s.classList.add("oculto"));
   const el = document.getElementById(id); if (el) el.classList.remove("oculto");
 
-  // cerrar menú si estaba abierto (UX móvil)
+  // cerrar menú si estaba abierto (UX móvil) y sincronizar ARIA
   const nav = document.getElementById("mainNav");
-  if (nav && nav.classList.contains('open')) nav.classList.remove('open');
+  const btn = document.getElementById("btnMenuToggle");
+  if (nav && nav.classList.contains('open')) {
+    nav.classList.remove('open');
+    if (btn) btn.setAttribute('aria-expanded','false');
+  }
+};
+/* ======= Backup: Exportar / Importar JSON ======= */
+window.exportarJSON = async function () {
+  try {
+    // Opcional: excluir temporales "tmp_" (descomenta si quieres)
+    // const arr = Array.from(listasCache.values()).filter(it => !String(it.id || '').startsWith('tmp_'));
+    const arr = Array.from(listasCache.values());
+    const blob = new Blob([JSON.stringify(arr, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = Object.assign(document.createElement('a'), {
+      href: url,
+      download: `listas_backup_${Date.now()}.json`
+    });
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+    mostrarMensaje("Exportación iniciada.", "success");
+  } catch (e) {
+    console.error(e);
+    mostrarMensaje("No se pudo exportar el respaldo.", "error");
+  }
+};
+
+window.importarJSON = async function (file) {
+  if (!file) return;
+  try {
+    const text = await file.text();
+    const arr = JSON.parse(text);
+    if (!Array.isArray(arr)) throw new Error("Formato inválido: se esperaba un arreglo.");
+
+    // Merge simple: sobreescribe por id si ya existía
+    let added = 0;
+    arr.forEach(it => {
+      if (it && it.id) {
+        listasCache.set(it.id, it);
+        added++;
+      }
+    });
+
+    // Persistir y refrescar UI
+    await persistCacheToIndexedDB();
+    rebuildScheduledTimeoutsFromStorage();
+    debouncedMostrarListas();
+    debouncedActualizarNotificaciones();
+
+    mostrarMensaje(`Importación completada. (${added} elemento(s))`, "success");
+  } catch (e) {
+    console.error(e);
+    mostrarMensaje("Error importando: " + (e.message || e), "error");
+  }
 };
 window.agregarProducto = agregarProducto;
 window.eliminarProducto = eliminarProducto;

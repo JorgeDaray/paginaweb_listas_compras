@@ -506,3 +506,90 @@ input::placeholder { color: #9aa4b2; }
   .event-resumen { gap: 10px; padding: 10px; }
   .date-box { width: 56px; height: 56px; }
 }
+/* ================= BOTONES SEGMENTADOS (toggle) ================= */
+.segmented{
+  display:inline-flex;
+  align-items:center;
+  border:1px solid #e6e9ef;
+  background:#f8fafc;
+  border-radius:9999px;
+  overflow:hidden;
+  vertical-align:middle;
+}
+.segmented .seg-btn{
+  appearance:none;
+  border:0;
+  background:transparent;
+  padding:4px 10px;          /* compacto */
+  font-size:12px;            /* más chico */
+  line-height:1.1;
+  cursor:pointer;
+  color:#374151;
+  white-space:nowrap;
+}
+.segmented .seg-btn + .seg-btn{
+  border-left:1px solid #e6e9ef; /* separador fino */
+}
+.segmented .seg-btn.active{
+  background:#ffffff;
+  color:#111827;
+  box-shadow:inset 0 0 0 1px #e6e9ef;
+}
+@media (pointer: coarse){
+  .segmented .seg-btn{ padding:6px 12px; } /* un pelín mayor en táctil */
+}
+
+/* ===== Acciones dentro del detalle de una lista ===== */
+.detalle-lista .acciones-lista{
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  gap:8px;
+  margin:8px 0 10px;
+}
+
+.acciones-lista .spacer{
+  flex:1 1 auto; /* empuja los botones de la derecha */
+}
+
+/* Botones consistentes (sirven para <a> y <button>) */
+.btn{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  padding:6px 10px;
+  border-radius:8px;
+  border:1px solid #e6e9ef;
+  background:#fff;
+  font-weight:600;
+  font-size:0.95rem;
+  text-decoration:none;
+  color:#111827;
+  cursor:pointer;
+  transition:background .15s ease, box-shadow .15s ease, transform .02s ease;
+}
+.btn:hover{ background:#f8fafc; }
+.btn:active{ transform:translateY(1px); }
+
+.btn--primary{
+  background:#eff6ff;
+  color:#1d4ed8;
+  border-color:#bfdbfe;
+}
+.btn--secondary{
+  background:#f1f5f9;
+  color:#0f172a;
+  border-color:#e2e8f0;
+}
+.btn--ghost{
+  background: transparent;
+  border-color: transparent;
+}
+.btn--ghost:hover{ background:#f8fafc; border-color:#e6e9ef; }
+.btn--danger{
+  background:#fef2f2;
+  color:#b91c1c;
+  border-color:#fecaca;
+}
+
+.btn i{ font-size:0.95em; }
