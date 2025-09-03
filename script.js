@@ -1562,6 +1562,9 @@ function renderEvents(eventos) {
   const ul = document.getElementById("listaEventos");
   if (!ul) return;
   ul.innerHTML = "";
+  // Ocultar eventos ya hechos o descartados
+  eventos = (Array.isArray(eventos) ? eventos : [])
+  .filter(l => !l.completada && !l._notificacionDescartada);
 
   // === Filtros por lugar y rango (si ya los tienes) ===
   const filtroLugar = normalizarTexto(document.getElementById("filtroLugarEventos")?.value || "");
@@ -1589,7 +1592,7 @@ function renderEvents(eventos) {
 
   // === NUEVO: calcular totales y mostrar contador ===
   const totalStored = Array.from(listasCache.values())
-  .filter(l => l.isEvento).length;
+  .filter(l => l.isEvento && !l.completada && !l._notificacionDescartada).length;
   const filteredTotal = eventos.length;
   updateEventsCountDisplay(filteredTotal, totalStored);
 
@@ -1608,7 +1611,7 @@ function renderEvents(eventos) {
   const mostradas = eventos.slice(0, eventosMostradosCount);
 
   // badge del menú debe reflejar total
-  renderMenuBadge(total, 'events');
+  renderMenuBadge(totalStored, 'events');
 
   mostradas.forEach(lista => {
     const li = document.createElement("li");
@@ -1809,7 +1812,8 @@ async function marcarListaComoHecha(id) {
       }
       debouncedActualizarNotificaciones();
       mostrarListasFirebase(true);
-      return;
+      refrescarEventosFiltrados(true);
+      return;    
     }
 
     if (navigator.onLine && canUseFirestore()) {
@@ -1817,6 +1821,12 @@ async function marcarListaComoHecha(id) {
       const updated = await safeUpdateDoc(id, { estado: "normal", completada: true });
       if (updated) mostrarMensaje("Lista marcada como hecha (en la nube).", "success");
       else mostrarMensaje("No hubo cambios que guardar.", "info");
+      // 🔧 Reflejar inmediato en UI (sin esperar onSnapshot)
+      if (updated) {
+        const cachedNow = listasCache.get(id) || {};
+        listasCache.set(id, { ...cachedNow, estado: "normal", completada: true });
+        await schedulePersistCacheToIndexedDB();
+      }
     } else {
       const updates = loadPendingUpdates();
       updates[id] = { ...(updates[id]||{}), estado: "normal", completada: true };
@@ -1829,6 +1839,7 @@ async function marcarListaComoHecha(id) {
     cancelScheduledNotificationsForList(id);
     debouncedActualizarNotificaciones();
     mostrarListasFirebase(true);
+    refrescarEventosFiltrados(true);
   } catch(e){ mostrarMensaje("Error marcando la lista como hecha", "error"); console.error(e); }
 }
 
@@ -1838,6 +1849,15 @@ async function descartarNotificacion(id) {
       const updated = await safeUpdateDoc(id, { _notificacionDescartada: true });
       if (updated) mostrarMensaje("Notificación descartada (en la nube).", "success");
       else mostrarMensaje("No hubo cambios para descartar.", "info");
+      // 🔧 Reflejar inmediato en UI (sin esperar onSnapshot)
+      if (updated) {
+        const cachedNow = listasCache.get(id);
+        if (cachedNow) {
+          cachedNow._notificacionDescartada = true;
+          listasCache.set(id, cachedNow);
+          await schedulePersistCacheToIndexedDB();
+        }
+      }
     } else {
       const updates = loadPendingUpdates();
       updates[id] = { ...(updates[id]||{}), _notificacionDescartada: true };
@@ -1848,6 +1868,8 @@ async function descartarNotificacion(id) {
     }
     cancelScheduledNotificationsForList(id);
     debouncedActualizarNotificaciones();
+    mostrarListasFirebase(true);
+    refrescarEventosFiltrados(true);
   } catch(e){ console.error("Error descartar:", e); mostrarMensaje("Error descartando notificación", "error"); }
 }
 
