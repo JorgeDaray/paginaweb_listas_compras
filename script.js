@@ -5,6 +5,7 @@ export const TAB_ID = `${Date.now()}_${Math.random().toString(36).slice(2)}`;
 const bc = ("BroadcastChannel" in window) ? new BroadcastChannel("listasapp:v1") : null;
 
 export let isLeaderTab = true; // se decide tras la elección
+let heardExternalLeader = false; // 👈 nuevo: recuerda si ya oímos a otro líder
 export const leaderElectionReady = new Promise((resolve) => {
   if (!bc) { isLeaderTab = true; resolve(true); return; }
 
@@ -12,14 +13,31 @@ export const leaderElectionReady = new Promise((resolve) => {
 
   try { bc.postMessage({ type: "candidate", id: TAB_ID }); } catch {}
 
-  bc.onmessage = (ev) => {
+  // tras crear bc y TAB_ID…
+  bc?.addEventListener?.('messageerror', () => {}); // defensivo
+
+  bc && (bc.onmessage = (ev) => {
     const d = ev.data || {};
-    if (d.type === "candidate" && d.id) contenders.add(d.id);
-    if (d.type === "iamleader" && d.id && d.id !== TAB_ID) isLeaderTab = false;
-  };
+    if (d.type === "candidate" && d.id) {
+      contenders.add(d.id);
+      // 👇 si YO soy líder, contesto para que el recién llegado sepa que ya hay líder
+      if (isLeaderTab) { try { bc.postMessage({ type: "iamleader", id: TAB_ID }); } catch {} }
+    }
+    if (d.type === "iamleader" && d.id && d.id !== TAB_ID) {
+      isLeaderTab = false;
+      heardExternalLeader = true;               // 👈 no me autoproclames después
+      contenders.add(d.id);                     // 👈 incluye el líder existente
+    }
+  });
 
   // pequeña ventana para oír a otras pestañas (evita “nadie es líder”)
   setTimeout(() => {
+    if (heardExternalLeader) {
+      // Si ya escuchamos un líder externo, respétalo
+      console.log("Leader? false (heard external leader)", "tab:", TAB_ID);
+      resolve(false);
+      return;
+    }
     const leaderId = [...contenders].sort()[0];
     isLeaderTab = (leaderId === TAB_ID);
     if (isLeaderTab) { try { bc.postMessage({ type: "iamleader", id: TAB_ID }); } catch {} }
@@ -28,62 +46,81 @@ export const leaderElectionReady = new Promise((resolve) => {
   }, 200);
 });
 
-let firebaseLoaded = false;
-let initializeApp, getAnalytics, getFirestore, collection, addDoc, query, orderBy, limit, deleteDoc,
-    doc, updateDoc, serverTimestamp, getDoc, onSnapshot, enableIndexedDbPersistence, initializeFirestore;
+let initializeApp, getAnalytics, initializeFirestore,
+    collection, addDoc, query, orderBy, limit, deleteDoc,
+    doc, updateDoc, serverTimestamp, getDoc, onSnapshot,
+    writeBatch, getDocs;
+
+// refs a helpers de la nueva caché
+let persistentLocalCache, persistentMultipleTabManager, memoryLocalCache;
 
 let db = null;
 let analytics = null;
-let writeBatch, getDocs; // nuevo
+// debajo del bloque de imports dinámicos / refs
+let firebaseLoaded = false;   // <—  AÑADIR
 
 async function initFirebase() {
-  // evita reintentar si ya cargó
   if (firebaseLoaded) return true;
+
   try {
-    // Cargar módulos dinámicamente (se servirán desde caché si el SW los guardó)
-    const modApp = await import("https://www.gstatic.com/firebasejs/12.0.0/firebase-app.js");
+    const modApp       = await import("https://www.gstatic.com/firebasejs/12.0.0/firebase-app.js");
     const modAnalytics = await import("https://www.gstatic.com/firebasejs/12.0.0/firebase-analytics.js");
     const modFirestore = await import("https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js");
 
-    // dentro de initFirebase(), justo después de obtener modFirestore:
-    writeBatch = modFirestore.writeBatch;
-    getDocs = modFirestore.getDocs; // opcional si lo usarás
+    // APIs que usas en el resto del código
+    initializeApp     = modApp.initializeApp;
+    getAnalytics      = modAnalytics.getAnalytics;
+
     initializeFirestore = modFirestore.initializeFirestore;
-    // (asegúrate de declarar estas variables arriba similar a las demás)
+    collection        = modFirestore.collection;
+    addDoc            = modFirestore.addDoc;
+    query             = modFirestore.query;
+    orderBy           = modFirestore.orderBy;
+    limit             = modFirestore.limit;
+    deleteDoc         = modFirestore.deleteDoc;
+    doc               = modFirestore.doc;
+    updateDoc         = modFirestore.updateDoc;
+    serverTimestamp   = modFirestore.serverTimestamp;
+    getDoc            = modFirestore.getDoc;
+    onSnapshot        = modFirestore.onSnapshot;
 
-    // asignar referencias
-    initializeApp = modApp.initializeApp;
-    getAnalytics = modAnalytics.getAnalytics;
-    getFirestore = modFirestore.getFirestore;
-    collection = modFirestore.collection;
-    addDoc = modFirestore.addDoc;
-    query = modFirestore.query;
-    orderBy = modFirestore.orderBy;
-    limit = modFirestore.limit;
-    deleteDoc = modFirestore.deleteDoc;
-    doc = modFirestore.doc;
-    updateDoc = modFirestore.updateDoc;
-    serverTimestamp = modFirestore.serverTimestamp;
-    getDoc = modFirestore.getDoc;
-    onSnapshot = modFirestore.onSnapshot;
-    enableIndexedDbPersistence = modFirestore.enableIndexedDbPersistence;
+    writeBatch        = modFirestore.writeBatch;
+    getDocs           = modFirestore.getDocs;
 
-    // inicializar app/analytics/db
+    // NUEVO: helpers de caché v12
+    persistentLocalCache        = modFirestore.persistentLocalCache;
+    persistentMultipleTabManager= modFirestore.persistentMultipleTabManager;
+    memoryLocalCache            = modFirestore.memoryLocalCache;
+
+    // Inicializa app y analytics
     const app = initializeApp(firebaseConfig);
-    try { analytics = getAnalytics(app); } catch (e) { /* analytics puede fallar en algunos entornos */ }
+    try { analytics = getAnalytics(app); } catch {}
+
+    // ✅ Caché persistente con sincronización multi-tab (sin enableIndexedDbPersistence)
     try {
       db = initializeFirestore(app, {
         ignoreUndefinedProperties: true,
-        experimentalAutoDetectLongPolling: true, // se adapta a redes raras
+        experimentalAutoDetectLongPolling: true,
+        localCache: persistentLocalCache({
+          tabManager: persistentMultipleTabManager(),
+        }),
       });
-    } catch {
-      db = getFirestore(app); // fallback
+      console.log("Firestore con caché persistente multi-tab.");
+    } catch (e) {
+      // Fallback seguro (Safari/privado/etc.)
+      db = initializeFirestore(app, {
+        ignoreUndefinedProperties: true,
+        experimentalAutoDetectLongPolling: true,
+        localCache: memoryLocalCache(),
+      });
+      console.warn("IndexedDB no disponible. Usando caché en memoria.", e?.message || e);
     }
+
     firebaseLoaded = true;
     console.log("Firebase cargado dinámicamente.");
     return true;
   } catch (err) {
-    console.warn("No se pudo cargar Firebase dinámicamente. Modo offline parcial activado.", err && err.message ? err.message : err);
+    console.warn("No se pudo cargar Firebase dinámicamente. Modo offline parcial.", err?.message || err);
     firebaseLoaded = false;
     db = null;
     return false;
@@ -176,6 +213,14 @@ function incrClientWriteCounter(n = 1) {
 }
 
 // ---------- safeUpdateDoc: solo actualiza cuando hay cambios visibles en cache ----------
+function shallowChanged(a, b) {
+  if (a === b) return false;
+  if (a && b && typeof a === 'object' && typeof b === 'object') return true; // fuerza update en objetos
+  // distingue números reales:
+  if (typeof a === 'number' || typeof b === 'number') return Number(a) !== Number(b);
+  return String(a) !== String(b);
+}
+
 async function safeUpdateDoc(docRefOrPath, updates) {
   if (!updates || Object.keys(updates).length === 0) return false;
   let id;
@@ -195,7 +240,8 @@ async function safeUpdateDoc(docRefOrPath, updates) {
       // comparación básica: si son objetos, considera que cambian (o implementa deepEqual si quieres)
       if (typeof newV === 'object' && newV !== null) { need = true; break; }
 
-      if (String(newV) !== String(oldV)) { need = true; break; }
+      //if (String(newV) !== String(oldV)) 
+      if (shallowChanged(newV, oldV)) { need = true; break; }
     }
     if (!need) return false;
   }
@@ -440,6 +486,75 @@ function savePendingUpdates(obj){ try { localStorage.setItem(PEND_UPD_KEY, JSON.
 function loadPendingDeletes(){ try { return JSON.parse(localStorage.getItem(PEND_DEL_KEY) || "[]"); } catch(e){ return []; } }
 function savePendingDeletes(arr){ try { localStorage.setItem(PEND_DEL_KEY, JSON.stringify(arr)); } catch(e){} }
 
+// ===== LOCK cross-tab para sincronización de pendientes =====
+
+// 👇 Nuevo acquire: ejecuta el trabajo DENTRO del lock si existe Locks API; si no, usa fallback con localStorage
+async function acquireSyncLockSafely(runFn) {
+  if (navigator.locks?.request) {
+    try {
+      const result = await navigator.locks.request(
+        "listas:sync",
+        { mode: "exclusive", ifAvailable: true },
+        async (lock) => {
+          if (!lock) return false;     // no obtuve el lock
+          try { await runFn(); return true; }
+          catch (e) { console.error("Sync runFn error:", e); return false; }
+        }
+      );
+      return !!result;
+    } catch (e) {
+      console.warn("Locks API error, fallback a localStorage lock:", e);
+    }
+  }
+  // Fallback: lock por localStorage
+  if (!tryAcquireSyncLock(30000)) return false;
+  try { await runFn(); return true; }
+  finally { releaseSyncLock(); }
+}
+
+const SYNC_LOCK_KEY = 'listas_sync_lock_v1';
+
+function tryAcquireSyncLock(ttlMs = 30000) {
+  try {
+    const now = Date.now();
+    const raw = localStorage.getItem(SYNC_LOCK_KEY);
+    const prev = raw ? JSON.parse(raw) : null;
+    if (prev && (now - prev.ts) < ttlMs) return false;
+
+    const mine = { ts: now, tab: TAB_ID };
+    localStorage.setItem(SYNC_LOCK_KEY, JSON.stringify(mine));
+
+    // Verificar que el lock quedó con mi TAB_ID
+    const check = JSON.parse(localStorage.getItem(SYNC_LOCK_KEY) || "null");
+    return !!check && check.tab === TAB_ID;
+  } catch { return true; }
+}
+
+function releaseSyncLock() {
+  try {
+    const raw = localStorage.getItem(SYNC_LOCK_KEY);
+    const prev = raw ? JSON.parse(raw) : null;
+    if (prev && prev.tab === TAB_ID) localStorage.removeItem(SYNC_LOCK_KEY);
+  } catch {}
+}
+
+function bumpSyncLock() {
+  try {
+    const raw = localStorage.getItem(SYNC_LOCK_KEY);
+    const prev = raw ? JSON.parse(raw) : null;
+    if (prev && prev.tab === TAB_ID) {
+      prev.ts = Date.now();
+      localStorage.setItem(SYNC_LOCK_KEY, JSON.stringify(prev));
+    }
+  } catch {}
+}
+
+// (Actualizado) suelta el lock y cierra el canal si esta pestaña se cierra
+window.addEventListener('unload', () => {
+  try { releaseSyncLock(); } catch {}
+  try { bc?.close?.(); } catch {}
+});
+
 /* ======= SCHEDULED TIMEOUTS (persistencia simple) ======= */
 const scheduledTimeouts = new Map();
 function loadScheduledMap() { try { const raw = localStorage.getItem(STORAGE_KEY_SCHEDULE); return raw ? JSON.parse(raw) : {}; } catch(e){ return {}; } }
@@ -492,6 +607,7 @@ function sendBrowserNotification(title, body, data = {}) {
  * - durationMinutes: duración si allDay=false
  *
  * Devuelve la mejor URL para abrir Google Calendar según plataforma.
+ * 🔧 Corregido: usa hora LOCAL sin 'Z' y agrega ctz (zona horaria).
  */
 function crearGoogleCalendarLink(lista, opts = { allDay: true, hour: NOTIFY_HOUR || 9, durationMinutes: 60 }) {
   if (!lista || !lista.fecha) return "#";
@@ -500,8 +616,10 @@ function crearGoogleCalendarLink(lista, opts = { allDay: true, hour: NOTIFY_HOUR
 
   const pad = (n) => String(n).padStart(2, "0");
 
-  // fechas para params (all-day usa YYYYMMDD/YYYYMMDD; con hora usa timestamps ISO sin separadores + Z)
+  // fechas para params (all-day usa YYYYMMDD/YYYYMMDD; con hora usa timestamps locales sin 'Z')
   let startParam, endParam;
+
+  const tz = encodeURIComponent(Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC');
 
   if (opts.allDay) {
     const y = fecha.getFullYear();
@@ -518,10 +636,18 @@ function crearGoogleCalendarLink(lista, opts = { allDay: true, hour: NOTIFY_HOUR
     startDateLocal.setHours(opts.hour || NOTIFY_HOUR || 9, 0, 0, 0);
     const endDateLocal = new Date(startDateLocal.getTime() + ((opts.durationMinutes || 60) * 60 * 1000));
 
-    // Google acepta formato YYYYMMDDTHHMMSSZ (UTC). Convertimos a UTC ISO con Z.
-    const toGCalTs = (dt) => dt.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
-    startParam = toGCalTs(startDateLocal);
-    endParam = toGCalTs(endDateLocal);
+    // Google acepta formato local YYYYMMDDTHHMMSS (sin Z) + ctz
+    const toGCalLocalTs = (dt) => {
+      const y = dt.getFullYear();
+      const m = pad(dt.getMonth()+1);
+      const d = pad(dt.getDate());
+      const h = pad(dt.getHours());
+      const mi = pad(dt.getMinutes());
+      const s = pad(dt.getSeconds());
+      return `${y}${m}${d}T${h}${mi}${s}`;
+    };
+    startParam = toGCalLocalTs(startDateLocal);
+    endParam = toGCalLocalTs(endDateLocal);
   }
 
   const title = encodeURIComponent(`Lista: ${lista.lugar || "Compras"}`);
@@ -532,21 +658,14 @@ function crearGoogleCalendarLink(lista, opts = { allDay: true, hour: NOTIFY_HOUR
   );
   const location = encodeURIComponent(lista.lugar || "");
 
-  // Detectar móvil (simpley razonable)
+  // Detectar móvil (simple y razonable)
   const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent || "");
 
   if (isMobile) {
-    // Mejor compatibilidad en móvil: usar "render?action=TEMPLATE"
-    // params: action=TEMPLATE&text=...&dates=start/end&details=...&location=...
-    return `https://www.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${startParam}/${endParam}&details=${details}&location=${location}`;
+    return `https://www.google.com/calendar/render?action=TEMPLATE&ctz=${tz}&text=${title}&dates=${startParam}/${endParam}&details=${details}&location=${location}`;
   } else {
-    // Escritorio: usar la URL que ya tenías (abre UI web editable)
-    return `https://calendar.google.com/calendar/r/eventedit?text=${title}&dates=${startParam}/${endParam}&details=${details}&location=${location}`;
+    return `https://calendar.google.com/calendar/r/eventedit?ctz=${tz}&text=${title}&dates=${startParam}/${endParam}&details=${details}&location=${location}`;
   }
-
-  // Opcional: Android intent fallback (no se usa por defecto, usar sólo si quieres forzar abrir la app)
-  // const intentUrl = `intent://calendar.google.com/calendar/r/eventedit?text=${title}&dates=${startParam}/${endParam}&details=${details}&location=${location}#Intent;package=com.google.android.calendar;scheme=https;end`;
-  // return intentUrl;
 }
 
 /* ======= UTILIDADES UI: mostrarMensaje con tipos ======= */
@@ -595,7 +714,6 @@ function debounce(fn, wait = 300) {
 /* ======= SCHEDULER: programar notificaciones (AHORA in-app, NO Notification API) ======= */
 async function scheduleNotificationsForList(lista) {
   if (!lista || !lista.id || !lista.fecha) return;
-  // limpia timers previos
   // limpia timers previos (defensiva: si hay arrays de ids, limpiarlos todos)
   const prevTimers = scheduledTimeouts.get(lista.id) || [];
   prevTimers.forEach(id => {
@@ -753,10 +871,9 @@ async function advanceMonthlyIfPastForAll() {
       }
     }
     if (pending > 0) {
+      bumpSyncLock();
       await batch.commit();
       incrClientWriteCounter(pending);
-      // cancelar notifs en lote (si tienes función que acepta array)
-      // por ahora puedes iterar cancelScheduledNotificationsForList por cada id modificado
     }
   } catch (e) {
     console.error('advanceMonthlyIfPastForAll error (batch):', e);
@@ -1134,10 +1251,30 @@ function renderListaNotificaciones(pendientes) {
     const colors = colorForDias(dias);
     const pagoMensualBadge = lista.pagoMensual ? ' <span style="background:#3b82f6;color:#fff;padding:2px 6px;border-radius:6px;margin-left:8px;font-size:0.8em;">📆 PAGO MENSUAL</span>' : '';
 
-    // Reusar tu helper crearGoogleCalendarLink y descargarICS (siempre abrirá con info)
-    // Enlaza directamente a Google Calendar usando la versión "por hora" (opción preferente)
-    const calendarBtnHTML = `<a class="btn-google-calendar" href="${crearGoogleCalendarLink(lista, { allDay: false, hour: NOTIFY_HOUR || 9, durationMinutes: 60 })}" target="_blank" rel="noopener noreferrer" style="margin-right:8px;">➕ Añadir a Google Calendar</a>`;
-    const icsBtnHTML = `<button type="button" class="btn-download-ics" data-lista-id="${escapeHtml(lista.id)}" style="margin-right:8px;">⬇️ Descargar .ics</button>`;
+     // === Acciones: mismos estilos que en "Ver listas" y "Eventos" (2x2) ===
+     const calendarBtnHTML =
+     `<a class="btn btn--primary btn-google-calendar"
+         href="${crearGoogleCalendarLink(lista, { allDay: false, hour: NOTIFY_HOUR || 9, durationMinutes: 60 })}"
+         target="_blank" rel="noopener noreferrer">
+         <i class="fa-solid fa-calendar-plus" aria-hidden="true"></i> Añadir a Google Calendar
+      </a>`;
+
+   const icsBtnHTML =
+     `<button type="button"
+              class="btn btn--secondary btn-download-ics"
+              data-lista-id="${escapeHtml(lista.id)}">
+        <i class="fa-solid fa-file-arrow-down" aria-hidden="true"></i> Descargar .ics
+      </button>`;
+
+   const btnHechoHTML =
+     `<button class="btn btn--ghost accion-marcar" data-id="${lista.id}">
+        <i class="fa-solid fa-check" aria-hidden="true"></i> Hecho
+      </button>`;
+
+   const btnDescartarHTML =
+     `<button class="btn btn--danger accion-descartar" data-id="${lista.id}">
+        <i class="fa-solid fa-ban" aria-hidden="true"></i> Descartar
+      </button>`;
 
     const resumenHTML = `
       <div class="lista-resumen" style="border-left:6px solid ${colors.border}; padding-left:8px; background:${colors.bg}; border-radius:4px;">
@@ -1158,14 +1295,17 @@ function renderListaNotificaciones(pendientes) {
     `;
 
     const accionesHTML = `
-      <div class="acciones-panel oculto" id="acciones-${lista.id}" style="margin-top:8px;">
-        ${calendarBtnHTML}
-        ${icsBtnHTML}
-        <button class="accion-marcar" data-id="${lista.id}">Marcar como hecha</button>
-        <button class="accion-descartar" data-id="${lista.id}">Descartar</button>
-      </div>
-    `;
-
+    <div class="acciones-lista acciones-grid-2x2 oculto" id="acciones-${lista.id}" style="margin-top:8px;">
+      ${calendarBtnHTML}
+      ${icsBtnHTML}
+      <button class="btn btn--success accion-marcar" data-id="${lista.id}">
+        <i class="fa-solid fa-check" aria-hidden="true"></i> Marcar como hecha
+      </button>
+      <button class="btn btn--danger accion-descartar" data-id="${lista.id}">
+        <i class="fa-solid fa-ban" aria-hidden="true"></i> Descartar
+      </button>
+    </div>
+  `;  
     li.innerHTML = resumenHTML + detalleProductosHTML + accionesHTML;
 
     li.addEventListener("click", (e) => {
@@ -1231,7 +1371,7 @@ function renderListaNotificaciones(pendientes) {
 /* ======= ACTUALIZAR NOTIFICACIONES (usa cache) ======= */
 async function actualizarNotificaciones(listasExternas = null) {
   try {
-    if (navigator.onLine && canUseFirestore()) await advanceMonthlyIfPastForAll();
+    if (navigator.onLine && canUseFirestore() && isLeaderTab) await advanceMonthlyIfPastForAll();
 
     let listas = [];
     if (Array.isArray(listasExternas)) listas = listasExternas;
@@ -1264,6 +1404,7 @@ async function actualizarNotificaciones(listasExternas = null) {
           const chunk = pendingEstadoUpdates.slice(i, i + BATCH_SIZE);
           const batch = writeBatch(db);
           chunk.forEach(u => batch.update(doc(db, 'listas', u.id), { estado: u.estado }));
+          bumpSyncLock();
           await batch.commit();
           incrClientWriteCounter(chunk.length);
         }
@@ -1284,9 +1425,10 @@ async function actualizarNotificaciones(listasExternas = null) {
     // Notifs: se delega a applyNotifsFilterAndRender -> renderListaNotificaciones (ahí se actualiza el badge)
     applyNotifsFilterAndRender();
 
-    // Reagendar timers
-    pendientesPorFecha.forEach(lista => scheduleNotificationsForList(lista));
-    eventosPorFecha.forEach(lista => scheduleNotificationsForList(lista));
+    if (isLeaderTab) {
+      pendientesPorFecha.forEach(lista => scheduleNotificationsForList(lista));
+      eventosPorFecha.forEach(lista => scheduleNotificationsForList(lista));
+    }    
 
     // ⛔️ Importante: NO tocar aquí el badge de notifs (evita parpadeo)
     // renderMenuBadge(pendientesPorFecha.length, 'notifs');  // <-- eliminado
@@ -1425,60 +1567,65 @@ function renderEvents(eventos) {
 
     // === Toolbar (mismos botones que en "Ver listas", adaptados a eventos) ===
     const calendarBtnHTML =
-      `<a class="btn btn--primary btn-google-calendar"
-          href="${crearGoogleCalendarLink(lista, { allDay: false, hour: NOTIFY_HOUR || 9, durationMinutes: 60 })}"
-          target="_blank" rel="noopener noreferrer">
-          <i class="fa-solid fa-calendar-plus" aria-hidden="true"></i> Añadir a Google Calendar
-       </a>`;
-
-    const icsBtnHTML =
-      `<button type="button"
-              class="btn btn--secondary btn-download-ics"
-              data-lista-id="${escapeHtml(lista.id)}">
-         <i class="fa-solid fa-file-arrow-down" aria-hidden="true"></i> Descargar .ics
-       </button>`;
-
-    const btnHechoHTML =
-      `<button class="btn btn--ghost accion-marcar" data-id="${lista.id}">
-         <i class="fa-solid fa-check" aria-hidden="true"></i> Hecho
-       </button>`;
-
-    const btnDescartarHTML =
-      `<button class="btn btn--danger accion-descartar" data-id="${lista.id}">
-         <i class="fa-solid fa-ban" aria-hidden="true"></i> Descartar
-       </button>`;
-
-    li.innerHTML = `
-      <div class="lista-resumen event-resumen ${colorsClass}" tabindex="0" role="button"
-           aria-expanded="false" aria-controls="detalle-productos-${lista.id}">
-        <div class="date-box" aria-hidden="true">
-          <div class="day">${escapeHtml(dayStr)}</div>
-          <div class="month">${escapeHtml(monthStr)}</div>
-        </div>
-        <div class="event-content">
-          <div style="display:flex; align-items:center; justify-content:space-between; gap:12px;">
-            <div class="event-title">🏪 ${escapeHtml(lista.lugar || '')}</div>
-            <div style="font-weight:700; color:#2b2b38;">💰 $${totalPrecio}</div>
-          </div>
-          <div class="event-meta">${escapeHtml(estadoTexto)}</div>
-        </div>
+    `<a class="btn btn--primary btn-google-calendar"
+        href="${crearGoogleCalendarLink(lista, { allDay: false, hour: NOTIFY_HOUR || 9, durationMinutes: 60 })}"
+        target="_blank" rel="noopener noreferrer">
+        <i class="fa-solid fa-calendar-plus" aria-hidden="true"></i> Añadir a Google Calendar
+     </a>`;
+  
+  const icsBtnHTML =
+    `<button type="button"
+            class="btn btn--secondary btn-download-ics"
+            data-lista-id="${escapeHtml(lista.id)}">
+       <i class="fa-solid fa-file-arrow-down" aria-hidden="true"></i> Descargar .ics
+     </button>`;
+  
+  /* 👇 cambia a botón verde */
+  const btnHechoHTML =
+    `<button class="btn btn--success accion-marcar" data-id="${lista.id}">
+       <i class="fa-solid fa-check" aria-hidden="true"></i> Hecho
+     </button>`;
+  
+  const btnDescartarHTML =
+    `<button class="btn btn--danger accion-descartar" data-id="${lista.id}">
+       <i class="fa-solid fa-ban" aria-hidden="true"></i> Descartar
+     </button>`;
+  
+  /* 👇 envuelve en dos grupos y deja el spacer al centro */
+  li.innerHTML = `
+  <div class="lista-resumen event-resumen ${colorsClass}" tabindex="0" role="button"
+       aria-expanded="false" aria-controls="detalle-productos-${lista.id}">
+    <div class="date-box" aria-hidden="true">
+      <div class="day">${escapeHtml(dayStr)}</div>
+      <div class="month">${escapeHtml(monthStr)}</div>
+    </div>
+    <div class="event-content">
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:12px;">
+        <div class="event-title">🏪 ${escapeHtml(lista.lugar || '')}</div>
+        <div style="font-weight:700; color:#2b2b38;">💰 $${totalPrecio}</div>
       </div>
+      <div class="event-meta">${escapeHtml(estadoTexto)}</div>
+    </div>
+  </div>
 
-      <div class="detalle-productos oculto" id="detalle-productos-${lista.id}" style="margin-top:8px; padding:10px; border-radius:6px; border:1px solid #eee; background:#fff;">
-        <div class="acciones-lista">
-          ${calendarBtnHTML}
-          ${icsBtnHTML}
-          <div class="spacer"></div>
-          ${btnHechoHTML}
-          ${btnDescartarHTML}
-        </div>
-        <ul style="margin-top:8px;">
-          ${(Array.isArray(lista.productos) && lista.productos.length)
-            ? lista.productos.map(p => `<li>${escapeHtml(p.nombre)} — $${(p.precio||0).toFixed(2)}${p.descripcion ? ` — ${escapeHtml(p.descripcion)}` : ''}</li>`).join('')
-            : '<li>(sin productos)</li>'}
-        </ul>
-      </div>
-    `;
+  <div class="detalle-productos oculto" id="detalle-productos-${lista.id}"
+       style="margin-top:8px; padding:10px; border-radius:6px; border:1px solid #eee; background:#fff;">
+
+    <!-- 👇 nueva cuadrícula 2×2 -->
+    <div class="acciones-lista acciones-eventos">
+      ${calendarBtnHTML}
+      ${icsBtnHTML}
+      ${btnHechoHTML /* ya lo tienes en verde con .btn--success */}
+      ${btnDescartarHTML}
+    </div>
+
+    <ul style="margin-top:8px;">
+      ${(Array.isArray(lista.productos) && lista.productos.length)
+        ? lista.productos.map(p => `<li>${escapeHtml(p.nombre)} — $${(p.precio||0).toFixed(2)}${p.descripcion ? ` — ${escapeHtml(p.descripcion)}` : ''}</li>`).join('')
+        : '<li>(sin productos)</li>'}
+    </ul>
+  </div>
+`;
 
     const resumenEl = li.querySelector('.event-resumen');
     const detalleEl = li.querySelector(`#detalle-productos-${lista.id}`);
@@ -1630,6 +1777,19 @@ async function descartarNotificacion(id) {
     cancelScheduledNotificationsForList(id);
     debouncedActualizarNotificaciones();
   } catch(e){ console.error("Error descartar:", e); mostrarMensaje("Error descartando notificación", "error"); }
+}
+
+function migrateScheduledMap(tmpId, newId) {
+  const map = loadScheduledMap();
+  if (map[tmpId]) {
+    map[newId] = Array.from(new Set([...(map[newId] || []), ...map[tmpId]]));
+    delete map[tmpId];
+    saveScheduledMap(map);
+  }
+  // cancela timers ligados al tmpId y reprograma con el id real
+  cancelScheduledNotificationsForList(tmpId);
+  const nuevaLista = listasCache.get(newId);
+  if (nuevaLista) scheduleNotificationsForList(nuevaLista);
 }
 
 /* ======= CRUD: guardar, editar, eliminar listas (usando cache donde tiene sentido) ======= */
@@ -1818,12 +1978,11 @@ function mostrarListasDesdeCache(resetCount=false, soloPendientes=false) {
           <div class="badge-pendiente">${badge}</div>
         </div>`;
 
-      const detalleHTML = `
+        const detalleHTML = `
         <div class="detalle-lista oculto">
-          <div class="acciones-lista">
+          <div class="acciones-lista acciones-grid-2x2">
             ${calendarBtnHTML}
             ${icsBtnHTML}
-            <div class="spacer"></div>
             <button class="btn btn--ghost" onclick="editarLista('${lista.id}')">
               <i class="fa-solid fa-pen-to-square" aria-hidden="true"></i> Editar
             </button>
@@ -1834,7 +1993,7 @@ function mostrarListasDesdeCache(resetCount=false, soloPendientes=false) {
           <ul class="productos-detalle">
             ${productosHTML}
           </ul>
-        </div>`;
+        </div>`;      
 
       ul.innerHTML += `<li data-id="${lista.id}">${resumenHTML}${detalleHTML}</li>`;
     });
@@ -2203,35 +2362,22 @@ if (hayError || productos.length === 0) return;
         const d = await getDoc(doc(db, "listas", idLista));
         if (d.exists()) prev = { id: d.id, ...d.data() };
       }
+      // ... tras calcular `prev` y antes de guardar en Firestore/local ...
       if (reactivarCheckbox && reactivarCheckbox.checked) {
         const confirmar = confirm("¿Confirmas que deseas reactivar las notificaciones para esta lista? Si confirmas, la lista volverá a aparecer en notificaciones si aplica.");
         if (confirmar) {
-          // Reactivar notificaciones: además de quitar el flag, asegurar que la lista NO esté marcada como completada
           datos._notificacionDescartada = false;
           datos.completada = false;
-          // asegurar estado acorde a la fecha (usa 'pendiente' si la fecha es hoy o futura)
-          // la variable 'estado' ya fue calculada arriba al iniciar el submit y se encuentra en datos.estado,
-          // así que nos aseguramos de conservarla (esto mantiene compatibilidad con la lógica previa).
-          datos.estado = estado;
+          datos.estado = estado; // ya calculado arriba
         } else {
-            // Mantener el valor previo si existe; no forzar a true.
-            const prevDesc = (prev && typeof prev._notificacionDescartada === 'boolean')
-              ? prev._notificacionDescartada
-              : false;
-            datos._notificacionDescartada = prevDesc;
-    
-            // Mantener 'completada' y 'estado' previos si no se reactivó
-            if (typeof prev?.completada === 'boolean') datos.completada = prev.completada;
-            if (typeof prev?.estado === 'string') datos.estado = prev.estado;
-          }
-    } else {
-        // Mantener el valor previo si existe; no forzar a true.
-        const prevDesc = (prev && typeof prev._notificacionDescartada === 'boolean')
-          ? prev._notificacionDescartada
-          : false;
+          const prevDesc = (prev && typeof prev._notificacionDescartada === 'boolean') ? prev._notificacionDescartada : false;
+          datos._notificacionDescartada = prevDesc;
+          if (typeof prev?.completada === 'boolean') datos.completada = prev.completada;
+          if (typeof prev?.estado === 'string') datos.estado = prev.estado;
+        }
+      } else {
+        const prevDesc = (prev && typeof prev._notificacionDescartada === 'boolean') ? prev._notificacionDescartada : false;
         datos._notificacionDescartada = prevDesc;
-
-        // Mantener 'completada' y 'estado' previos si no se reactivó
         if (typeof prev?.completada === 'boolean') datos.completada = prev.completada;
         if (typeof prev?.estado === 'string') datos.estado = prev.estado;
       }
@@ -2307,159 +2453,150 @@ function eliminarProducto(boton) { const divProducto = boton.parentElement; if (
 // bandera para evitar loops en onSnapshot / re-procesos masivos
 let isSyncingPending = false;
 
+// Reemplaza COMPLETO tu window.addEventListener("online", ... ) por este:
 window.addEventListener("online", async () => {
-  if (!isLeaderTab) { 
-    console.log("Online (no líder): omito sincronización de pendientes.");
-    return;
-  }
-  mostrarMensaje("Conexión restablecida. Sincronizando cambios pendientes...", "info");
-
-  // evitar colisiones concurrentes
-  if (isSyncingPending) {
-    console.log("Sincronización ya en curso, se omite nueva llamada online.");
-    return;
-  }
+  if (isSyncingPending) return;
   isSyncingPending = true;
 
-  try {
-    await initFirebase();
-    if (!canUseFirestore()) {
-      mostrarMensaje("Conexión OK, pero Firebase no disponible. Reintentaré sincronizar más tarde.", "error");
-      isSyncingPending = false;
-      return;
-    }
+  const ran = await acquireSyncLockSafely(async () => {
+    mostrarMensaje("Conexión restablecida. Sincronizando cambios pendientes...", "info");
+    try {
+      await initFirebase();
+      if (!canUseFirestore()) {
+        mostrarMensaje("Conexión OK, pero Firebase no disponible. Reintentaré sincronizar más tarde.", "error");
+        return;
+      }
 
-    // ------------ HANDLING: pendientes de CREATES (batch set con IDs cliente-side) ------------
-    const pendingCreates = loadPendingCreates();
-    const remainingCreates = [];
-    if (Array.isArray(pendingCreates) && pendingCreates.length > 0) {
-      // chunkar para no exceder limites; usar tamaño conservador (200)
-      const CHUNK = 200;
-      for (let i = 0; i < pendingCreates.length; i += CHUNK) {
-        const chunk = pendingCreates.slice(i, i + CHUNK);
-        try {
-          const batch = writeBatch(db);
-          const tmpToNewId = {};
-          chunk.forEach(c => {
-            // crear docRef con id generado client-side
-            const newRef = doc(collection(db, "listas"));
-            // si quieres que createdAt sea serverTimestamp, puedes setearlo aquí
-            batch.set(newRef, { ...c, createdAt: safeServerTimestamp() });
-            tmpToNewId[`tmp_${c.clientId}`] = newRef.id;
-          });
-          await batch.commit();
-          incrClientWriteCounter(chunk.length);
-          // actualizar cache/localDB para cada creado
-          for (const c of chunk) {
-            const tmpKey = `tmp_${c.clientId}`;
-            const newId = tmpToNewId[tmpKey];
-            // eliminar tmp de cache si existe y reemplazar por nuevo doc
-            const tmpEntry = listasCache.get(tmpKey);
-            if (tmpEntry) {
-              listasCache.delete(tmpKey);
-              await deleteOneFromIndexedDB(tmpKey).catch(()=>{});
-            }
-            const newDoc = { id: newId, ...c };
-            listasCache.set(newId, newDoc);
-            await saveOneToIndexedDB(newDoc).catch(()=>{});
-            // actualizar pendingUpdates mapping si existen keys que referían al tmp
-            const upd = loadPendingUpdates();
-            if (upd[tmpKey]) {
-              upd[newId] = { ...(upd[newId]||{}), ...upd[tmpKey] };
-              delete upd[tmpKey];
-              savePendingUpdates(upd);
-            }
-            // si había deletes referidas al tmp, actualízalas
-            let dels = loadPendingDeletes();
-            if (dels && Array.isArray(dels)) {
-              const idxTmp = dels.indexOf(tmpKey);
-              if (idxTmp !== -1) {
-                dels[idxTmp] = newId;
-                savePendingDeletes(dels);
+      // ------------ PENDIENTES: CREATES (tal como ya lo tienes) ------------
+      const pendingCreates = loadPendingCreates();
+      const remainingCreates = [];
+      if (Array.isArray(pendingCreates) && pendingCreates.length > 0) {
+        const CHUNK = 200;
+        for (let i = 0; i < pendingCreates.length; i += CHUNK) {
+          const chunk = pendingCreates.slice(i, i + CHUNK);
+          try {
+            const batch = writeBatch(db);
+            const tmpToNewId = {};
+            chunk.forEach(c => {
+              const newRef = doc(collection(db, "listas"));
+              batch.set(newRef, { ...c, createdAt: safeServerTimestamp() });
+              tmpToNewId[`tmp_${c.clientId}`] = newRef.id;
+            });
+            bumpSyncLock();
+            await batch.commit();
+            incrClientWriteCounter(chunk.length);
+            for (const c of chunk) {
+              const tmpKey = `tmp_${c.clientId}`;
+              const newId = tmpToNewId[tmpKey];
+              migrateScheduledMap(tmpKey, newId);
+              const tmpEntry = listasCache.get(tmpKey);
+              if (tmpEntry) {
+                listasCache.delete(tmpKey);
+                await deleteOneFromIndexedDB(tmpKey).catch(()=>{});
+              }
+              const newDoc = { id: newId, ...c };
+              listasCache.set(newId, newDoc);
+              await saveOneToIndexedDB(newDoc).catch(()=>{});
+              const upd = loadPendingUpdates();
+              if (upd[tmpKey]) {
+                upd[newId] = { ...(upd[newId]||{}), ...upd[tmpKey] };
+                delete upd[tmpKey];
+                savePendingUpdates(upd);
+              }
+              let dels = loadPendingDeletes();
+              if (dels && Array.isArray(dels)) {
+                const idxTmp = dels.indexOf(tmpKey);
+                if (idxTmp !== -1) { dels[idxTmp] = newId; savePendingDeletes(dels); }
               }
             }
+          } catch (err) {
+            console.error("Error sincronizando chunk de creates:", err);
+            remainingCreates.push(...chunk);
           }
-        } catch (err) {
-          console.error("Error sincronizando chunk de creates:", err);
-          // si falla el chunk entero, lo dejamos para reintentar luego
-          remainingCreates.push(...chunk);
         }
+        savePendingCreates(remainingCreates);
       }
-      savePendingCreates(remainingCreates);
-    }
 
-    // ------------ HANDLING: pendientes de UPDATES (batch update) ------------
-    const pendingUpdatesNow = loadPendingUpdates();
-    const updateIds = Object.keys(pendingUpdatesNow || {});
-    if (updateIds.length > 0) {
-      const CHUNK = 200;
-      for (let i = 0; i < updateIds.length; i += CHUNK) {
-        const chunkIds = updateIds.slice(i, i + CHUNK);
-        try {
-          const batch = writeBatch(db);
-          chunkIds.forEach(id => {
-            // si id es tmp_ (aún no fue mapeado), saltar y retener
-            if (id.startsWith("tmp_")) return;
-            const payload = { ...(pendingUpdatesNow[id]||{}) };
-            // si payload incluye campos de tiempo que deberían ser serverTimestamp, normalizarlos
-            if (payload.ultimoPagoGuardadoAt) payload.ultimoPagoGuardadoAt = safeServerTimestamp();
-            const ref = doc(db, "listas", id);
-            batch.update(ref, payload);
-          });
-          await batch.commit();
-          incrClientWriteCounter(chunkIds.length);
-          // eliminar chunkIds aplicados del pendingUpdatesNow (solo los que no eran tmp_)
-          chunkIds.forEach(id => { if (!id.startsWith("tmp_")) delete pendingUpdatesNow[id]; });
-        } catch (err) {
-          console.error("Error sincronizando chunk de updates:", err);
-          // en caso de fallo no eliminamos los ids (se reintentará)
+      // ------------ PENDIENTES: UPDATES (tal como ya lo tienes) ------------
+      const pendingUpdatesNow = loadPendingUpdates();
+      const updateIds = Object.keys(pendingUpdatesNow || {});
+      if (updateIds.length > 0) {
+        const CHUNK = 200;
+        for (let i = 0; i < updateIds.length; i += CHUNK) {
+          const chunkIds = updateIds.slice(i, i + CHUNK);
+          try {
+            const batch = writeBatch(db);
+            chunkIds.forEach(id => {
+              if (id.startsWith("tmp_")) return;
+              const payload = { ...(pendingUpdatesNow[id]||{}) };
+              if (payload.ultimoPagoGuardadoAt) payload.ultimoPagoGuardadoAt = safeServerTimestamp();
+              batch.update(doc(db, "listas", id), payload);
+            });
+            bumpSyncLock();
+            await batch.commit();
+            incrClientWriteCounter(chunkIds.length);
+            chunkIds.forEach(id => { if (!id.startsWith("tmp_")) delete pendingUpdatesNow[id]; });
+          } catch (err) {
+            console.error("Error sincronizando chunk de updates:", err);
+          }
         }
+        savePendingUpdates(pendingUpdatesNow);
       }
-      savePendingUpdates(pendingUpdatesNow);
-    }
 
-    // ------------ HANDLING: pendientes de DELETES (batch delete) ------------
-    const pendingDeletesNow = loadPendingDeletes() || [];
-    if (pendingDeletesNow.length > 0) {
-      const remainingDeletes = [];
-      const CHUNK = 200;
-      for (let i = 0; i < pendingDeletesNow.length; i += CHUNK) {
-        const chunk = pendingDeletesNow.slice(i, i + CHUNK);
-        try {
-          const batch = writeBatch(db);
-          chunk.forEach(id => {
-            if (id.startsWith("tmp_")) {
-              // si es tmp_: simplemente limpiar la cache/localDB
-              listasCache.delete(id);
-              deleteOneFromIndexedDB(id).catch(()=>{});
-            } else {
-              batch.delete(doc(db, "listas", id));
-            }
-          });
-          await batch.commit();
-          incrClientWriteCounter(chunk.length);
-        } catch (err) {
-          console.error("Error synchronizing chunk deletes:", err);
-          // si falla, añadimos a remainingDeletes los que no sean tmp_ (para reintentar)
-          chunk.forEach(id => { if (!id.startsWith("tmp_")) remainingDeletes.push(id); });
+      // ------------ PENDIENTES: DELETES (tal como ya lo tienes) ------------
+      const pendingDeletesNow = loadPendingDeletes() || [];
+      if (pendingDeletesNow.length > 0) {
+        const remainingDeletes = [];
+        const CHUNK = 200;
+        for (let i = 0; i < pendingDeletesNow.length; i += CHUNK) {
+          const chunk = pendingDeletesNow.slice(i, i + CHUNK);
+          try {
+            const batch = writeBatch(db);
+            chunk.forEach(id => {
+              if (id.startsWith("tmp_")) {
+                listasCache.delete(id);
+                deleteOneFromIndexedDB(id).catch(()=>{});
+              } else {
+                batch.delete(doc(db, "listas", id));
+              }
+            });
+            bumpSyncLock();
+            await batch.commit();
+            incrClientWriteCounter(chunk.length);
+          } catch (err) {
+            console.error("Error synchronizing chunk deletes:", err);
+            chunk.forEach(id => { if (!id.startsWith("tmp_")) remainingDeletes.push(id); });
+          }
         }
+        savePendingDeletes(remainingDeletes);
       }
-      savePendingDeletes(remainingDeletes);
+
+      if (isLeaderTab) rebuildScheduledTimeoutsFromStorage();
+      await schedulePersistCacheToIndexedDB().catch(()=>{});
+      debouncedActualizarNotificaciones();
+      mostrarListasFirebase(true);
+      mostrarMensaje("Sincronización completada.", "success");
+
+      // reintento al arrancar (igual a tu código actual)
+      try {
+        const hasPending =
+          (loadPendingCreates().length > 0) ||
+          (Object.keys(loadPendingUpdates() || {}).length > 0) ||
+          (loadPendingDeletes().length > 0);
+        if (navigator.onLine && hasPending) {
+          setTimeout(() => window.dispatchEvent(new Event("online")), 0);
+        }
+      } catch (e) {
+        console.warn("No se pudo disparar sync al arrancar:", e);
+      }
+    } catch (e) {
+      console.error("Error en handler online:", e);
+      mostrarMensaje("Error sincronizando cambios pendientes. Reintentaré más tarde.", "error");
     }
+  });
 
-    // reconstruir timers, persistir cache y actualizar UI al final (una sola vez)
-    rebuildScheduledTimeoutsFromStorage();
-    await schedulePersistCacheToIndexedDB().catch(()=>{});
-    debouncedActualizarNotificaciones();
-    mostrarListasFirebase(true);
-    mostrarMensaje("Sincronización completada.", "success");
-
-  } catch (e) {
-    console.error("Error en handler online:", e);
-    mostrarMensaje("Error sincronizando cambios pendientes. Reintentaré más tarde.", "error");
-  } finally {
-    isSyncingPending = false;
-  }
+  if (!ran) console.log("Otra pestaña hará la sincronización pendiente.");
+  isSyncingPending = false;
 });
 
 window.addEventListener("offline", () => mostrarMensaje("Sin conexión. Las acciones quedarán guardadas localmente y se sincronizarán al reconectar.", "offline"));
@@ -2602,35 +2739,13 @@ document.addEventListener("DOMContentLoaded", async () => {
       }
     }
     const firebaseOk = await initFirebase();
-
-    if (firebaseOk && isLeaderTab && typeof enableIndexedDbPersistence === "function") {
-      try {
-        await enableIndexedDbPersistence(db);
-        console.log("Persistencia IndexedDB habilitada.");
-      } catch (err) {
-        if (err && err.code === "failed-precondition") {
-          console.warn("No se puede habilitar persistencia (multiple tabs?).", err);
-          mostrarMensaje("Persistencia offline no disponible (varias pestañas). Se usará almacenamiento local.", "offline");
-        } else if (err && err.code === "unimplemented") {
-          console.warn("IndexedDB persistence no implementada en este navegador.", err);
-          mostrarMensaje("Tu navegador no soporta persistencia offline completa.", "offline");
-        } else {
-          console.warn("enableIndexedDbPersistence error:", err);
-          mostrarMensaje("No se pudo habilitar persistencia. Se usará almacenamiento local.", "offline");
-        }
-      }
-    } else if (firebaseOk && !isLeaderTab) {
-      console.log("Pestaña no líder: sin persistencia Firestore; sólo cache/local.");
-    } else if (!firebaseOk) {
-      mostrarMensaje("Modo offline: Firebase no disponible. Usando datos locales.", "offline");
-    }
     
     await loadCacheFromIndexedDB().catch((e) => { console.warn("loadCacheFromIndexedDB falló:", e); });
 
     mostrarSeccion("agregar");
     mostrarListasFirebase(true);
 
-    if (firebaseOk && isLeaderTab && typeof startListasListener === "function") {
+    if (firebaseOk && typeof startListasListener === "function") {
       try {
         startListasListener();
       } catch (e) {
@@ -2813,44 +2928,45 @@ document.addEventListener("DOMContentLoaded", async () => {
       mostrarMensaje("Lista no disponible localmente para generar .ics", "error");
     });
 
-    // inicializar toggle menú (no anidar DOMContentLoaded)
+    // === Toggle menú (móvil off-canvas + backdrop) ===
     const btnMenu = document.getElementById('btnMenuToggle');
     const navMain = document.getElementById('mainNav');
+    const backdrop = document.getElementById('navBackdrop');
 
     if (btnMenu && navMain) {
-      // Helper para mantener .open y aria-expanded sincronizados
       const setExpanded = (isOpen) => {
         navMain.classList.toggle('open', isOpen);
         btnMenu.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+        if (backdrop) {
+          backdrop.classList.toggle('oculto', !isOpen);
+          backdrop.classList.toggle('show', isOpen);
+        }
       };
 
-      // Estado inicial (por si llega con .open desde CSS o un resize previo)
-      setExpanded(navMain.classList.contains('open'));
+      // Estado inicial: cerrado en móvil
+      setExpanded(false);
 
-      // Toggle con click en el botón
       btnMenu.addEventListener('click', (e) => {
         e.stopPropagation();
         setExpanded(!navMain.classList.contains('open'));
       });
 
-      // Cerrar si se hace click fuera
+      if (backdrop) {
+        backdrop.addEventListener('click', () => setExpanded(false));
+      }
+
+      // Cerrar si se hace click fuera (móvil)
       document.addEventListener('click', (ev) => {
-        const isInside = ev.target.closest && (
-          ev.target.closest('#mainNav') || ev.target.closest('#btnMenuToggle')
-        );
-        if (!isInside && navMain.classList.contains('open')) {
-          setExpanded(false);
-        }
+        if (window.matchMedia('(min-width: 768px)').matches) return; // desktop no colapsa
+        const inside = ev.target.closest('#mainNav') || ev.target.closest('#btnMenuToggle');
+        if (!inside) setExpanded(false);
       });
 
-      // (Opcional, pero recomendable) Cerrar con Escape para accesibilidad
-      document.addEventListener('keydown', (ev) => {
-        if (ev.key === 'Escape' && navMain.classList.contains('open')) {
-          setExpanded(false);
-        }
+      // Al redimensionar: si pasa a desktop, asegúrate de cerrar el modo móvil
+      window.addEventListener('resize', () => {
+        if (window.matchMedia('(min-width: 768px)').matches) setExpanded(false);
       });
     }
-
   } catch (e) {
     console.error("Error inicializando la app:", e);
     mostrarMensaje("Error inicializando la aplicación. Revisa la consola para más detalles.", "error");
@@ -2968,7 +3084,7 @@ function generarContenidoICS(lista, opts = {}) {
   if (!dtStartDate || isNaN(dtStartDate)) return null;
 
   const hour = (typeof opts.hour === 'number') ? opts.hour : (typeof NOTIFY_HOUR === 'number' ? NOTIFY_HOUR : 9);
-  const durationMinutes = Number(opts.durationMinutes || 60); // duración por defecto 2 horas
+  const durationMinutes = Number(opts.durationMinutes || 60); // duración por defecto 1 hora
 
   // inicio en la hora local indicada
   const startLocal = dateAtHour(dtStartDate, hour);
@@ -3031,19 +3147,26 @@ function descargarICS(lista, opts = {}) {
   setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
 
-/* ======= UTILIDADES UI y exportar funciones globales ======= */
+/* === 1) mostrarSeccion: cierra el menú móvil y sincroniza ARIA === */
 window.mostrarSeccion = function(id){
   document.querySelectorAll(".seccion").forEach(s=>s.classList.add("oculto"));
-  const el = document.getElementById(id); if (el) el.classList.remove("oculto");
+  const el = document.getElementById(id); 
+  if (el) el.classList.remove("oculto");
 
   // cerrar menú si estaba abierto (UX móvil) y sincronizar ARIA
   const nav = document.getElementById("mainNav");
   const btn = document.getElementById("btnMenuToggle");
+  const backdrop = document.getElementById("navBackdrop");
   if (nav && nav.classList.contains('open')) {
     nav.classList.remove('open');
     if (btn) btn.setAttribute('aria-expanded','false');
+    if (backdrop){ 
+      backdrop.classList.add('oculto'); 
+      backdrop.classList.remove('show'); 
+    }
   }
 };
+
 /* ======= Backup: Exportar / Importar JSON ======= */
 window.exportarJSON = async function () {
   try {
