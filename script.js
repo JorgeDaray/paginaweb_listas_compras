@@ -27,6 +27,8 @@ export const leaderElectionReady = new Promise((resolve) => {
       isLeaderTab = false;
       heardExternalLeader = true;               // 👈 no me autoproclames después
       contenders.add(d.id);                     // 👈 incluye el líder existente
+      // 👇 NUEVO: por si esta pestaña llegó a programar algo (p. ej. al cargar)
+      try { cancelAllScheduledNotifications({ preserveStorage: true }); } catch {}
     }
   });
 
@@ -215,8 +217,16 @@ function incrClientWriteCounter(n = 1) {
 // ---------- safeUpdateDoc: solo actualiza cuando hay cambios visibles en cache ----------
 function shallowChanged(a, b) {
   if (a === b) return false;
-  if (a && b && typeof a === 'object' && typeof b === 'object') return true; // fuerza update en objetos
-  // distingue números reales:
+  if (Array.isArray(a) && Array.isArray(b)) {
+    if (a.length !== b.length) return true;
+    for (let i = 0; i < a.length; i++) {
+      if (JSON.stringify(a[i]) !== JSON.stringify(b[i])) return true;
+    }
+    return false;
+  }
+  if (typeof a === 'object' && typeof b === 'object') {
+    return JSON.stringify(a) !== JSON.stringify(b);
+  }
   if (typeof a === 'number' || typeof b === 'number') return Number(a) !== Number(b);
   return String(a) !== String(b);
 }
@@ -270,6 +280,8 @@ const STORAGE_KEY_SCHEDULE = 'listas_schedule_map_v1';
 const NOTIFY_OFFSETS_DAYS = [0,1,3]; // offsets que ya tenías (ejemplo)
 const NOTIFY_HOUR = 9; // hora por defecto para la notificación (si lo usas)
 const MAX_NOTIFY_WINDOW_DAYS = 365; // ejemplo máximo
+const MAX_PAST_NOTIFY_DAYS = 10; // mostrar pagos NO mensuales caducados hasta 10 días atrás
+
 
 /* ======= CACHE EN MEMORIA + PERSISTENCIA EN INDEXEDDB (con fallback a localStorage) ======= */
 const listasCache = new Map();
@@ -363,22 +375,23 @@ async function persistCacheToIndexedDB() {
 let _persistScheduled = null;
 
 function schedulePersistCacheToIndexedDB(delay = 1200) {
-  if (_persistScheduled && Array.isArray(_persistScheduled.timeoutIds)) {
-    _persistScheduled.timeoutIds.forEach(id => clearTimeout(id));
+  if (_persistScheduled && typeof _persistScheduled.cancel === 'function') {
+    try { _persistScheduled.cancel(); } catch {}
     _persistScheduled = null;
   }
   return new Promise((resolve) => {
     const run = async () => {
       try { await persistCacheToIndexedDB(); }
-      catch(e){ console.warn("persistCache error:", e); }
+      catch (e) { console.warn("persistCache error:", e); }
       finally { _persistScheduled = null; resolve(); }
     };
+
     if ('requestIdleCallback' in window) {
       const id = requestIdleCallback(run, { timeout: delay });
-      _persistScheduled = { timeoutIds: [id] };
+      _persistScheduled = { cancel: () => { try { cancelIdleCallback(id); } catch {} } };
     } else {
-      const timeoutIds = scheduleTimeout(delay, run);
-      _persistScheduled = { timeoutIds };
+      const cancel = scheduleTimeout(delay, run);
+      _persistScheduled = { cancel };
     }
   });
 }
@@ -433,42 +446,44 @@ const MAX_TIMEOUT_MS = 2147483647;
 
 /**
  * scheduleTimeout(delayMs, cb)
- * - Permite programar delays mayores al límite de setTimeout encadenando timeouts.
- * - Devuelve un array con todos los timeoutIds creados (puede ser 1 o varios).
+ * - Permite delays mayores al límite encadenando timeouts.
+ * - Devuelve una FUNCIÓN canceladora (cancel()).
  */
 function scheduleTimeout(delayMs, cb) {
-  const ids = [];
-  // step procesa "remaining" de forma recursiva si es necesario
-  function step(remaining) {
+  let cancelled = false;
+  let currentId = null;
+
+  function run(remaining) {
+    if (cancelled) return;
     if (remaining <= 0) {
-      try { cb(); } catch (e) { console.error("scheduleTimeout cb error:", e); }
+      Promise.resolve().then(() => {
+        if (!cancelled) {
+          try { cb(); } catch (e) { console.error("scheduleTimeout cb error:", e); }
+        }
+      });
       return;
     }
-    if (remaining <= MAX_TIMEOUT_MS) {
-      ids.push(setTimeout(() => {
-        try { cb(); } catch (e) { console.error("scheduleTimeout cb error:", e); }
-      }, remaining));
-    } else {
-      // programar un chunk máximo y volver a llamar
-      ids.push(setTimeout(() => step(remaining - MAX_TIMEOUT_MS), MAX_TIMEOUT_MS));
-    }
+    const slice = Math.min(remaining, MAX_TIMEOUT_MS);
+    currentId = setTimeout(() => run(remaining - slice), slice);
   }
-  step(delayMs);
-  return ids;
+
+  run(delayMs);
+
+  return () => {
+    cancelled = true;
+    if (currentId != null) {
+      try { clearTimeout(currentId); } catch {}
+    }
+  };
 }
 
 /**
  * scheduleAt(timestampMs, cb)
- * - Wrapper que acepta timestamp absoluto (Date.getTime()).
- * - Devuelve array de timeoutIds (posiblemente vacío si el cb se ejecuta inmediatamente).
+ * - Acepta timestamp absoluto (Date.getTime()).
+ * - Devuelve una FUNCIÓN canceladora (cancel()).
  */
 function scheduleAt(timestampMs, cb) {
-  const delay = timestampMs - Date.now();
-  if (delay <= 0) {
-    // ejecutar en siguiente tick y devolver el id para poder clearTimeout si se quiere
-    const id = setTimeout(() => { try { cb(); } catch (e) { console.error("scheduleAt cb error:", e); } }, 0);
-    return [id];
-  }
+  const delay = Math.max(0, timestampMs - Date.now());
   return scheduleTimeout(delay, cb);
 }
 
@@ -555,21 +570,28 @@ window.addEventListener('unload', () => {
   try { bc?.close?.(); } catch {}
 });
 
+window.addEventListener('pagehide', () => {
+  try { releaseSyncLock(); } catch {}
+  try { cancelAllScheduledNotifications({ preserveStorage: true }); } catch {}
+  try { bc?.close?.(); } catch {}
+});
+
 /* ======= SCHEDULED TIMEOUTS (persistencia simple) ======= */
 const scheduledTimeouts = new Map();
 function loadScheduledMap() { try { const raw = localStorage.getItem(STORAGE_KEY_SCHEDULE); return raw ? JSON.parse(raw) : {}; } catch(e){ return {}; } }
 function saveScheduledMap(map) { try { localStorage.setItem(STORAGE_KEY_SCHEDULE, JSON.stringify(map)); } catch(e){} }
 function cancelScheduledNotificationsForList(listId) {
-  const arr = scheduledTimeouts.get(listId) || [];
-  arr.forEach(id => clearTimeout(id));
+  const cancels = scheduledTimeouts.get(listId) || [];
+  cancels.forEach(fn => { try { fn(); } catch {} });
   scheduledTimeouts.delete(listId);
   const map = loadScheduledMap();
   if (map[listId]) { delete map[listId]; saveScheduledMap(map); }
 }
-function cancelAllScheduledNotifications() {
-  scheduledTimeouts.forEach((arr, id) => arr.forEach(tid => clearTimeout(tid)));
+
+function cancelAllScheduledNotifications({ preserveStorage = false } = {}) {
+  scheduledTimeouts.forEach(arr => arr.forEach(fn => { try { fn(); } catch {} }));
   scheduledTimeouts.clear();
-  saveScheduledMap({});
+  if (!preserveStorage) saveScheduledMap({});
 }
 
 /* ======= NOTIFICATIONS API (DESACTIVADAS: no usamos Notification) ======= */
@@ -653,7 +675,7 @@ function crearGoogleCalendarLink(lista, opts = { allDay: true, hour: NOTIFY_HOUR
   const title = encodeURIComponent(`Lista: ${lista.lugar || "Compras"}`);
   const details = encodeURIComponent(
     (Array.isArray(lista.productos) && lista.productos.length)
-      ? lista.productos.map(p => `${p.nombre} — $${(p.precio||0).toFixed(2)}${p.descripcion ? ` (${p.descripcion})` : ""}`).join("\n")
+    ? lista.productos.map(p => `${p.nombre} — $${Number(p.precio||0).toFixed(2)}${p.descripcion ? ` (${p.descripcion})` : ""}`).join("\n")
       : "Sin productos detallados."
   );
   const location = encodeURIComponent(lista.lugar || "");
@@ -714,11 +736,10 @@ function debounce(fn, wait = 300) {
 /* ======= SCHEDULER: programar notificaciones (AHORA in-app, NO Notification API) ======= */
 async function scheduleNotificationsForList(lista) {
   if (!lista || !lista.id || !lista.fecha) return;
-  // limpia timers previos (defensiva: si hay arrays de ids, limpiarlos todos)
-  const prevTimers = scheduledTimeouts.get(lista.id) || [];
-  prevTimers.forEach(id => {
-    try { clearTimeout(id); } catch(e){ /* ignore */ }
-  });
+
+  // limpia timers previos (defensiva)
+  const prevCancels = scheduledTimeouts.get(lista.id) || [];
+  prevCancels.forEach(fn => { try { fn(); } catch {} });
   scheduledTimeouts.delete(lista.id);
 
   if (lista.pagoMensual) {
@@ -733,7 +754,6 @@ async function scheduleNotificationsForList(lista) {
   if (lista._notificacionDescartada) { cancelScheduledNotificationsForList(lista.id); return; }
   if (!esPendientePorFechaOnly(lista)) { cancelScheduledNotificationsForList(lista.id); return; }
 
-  // No pedimos permiso al navegador (notificaciones desactivadas). Seguimos guardando timestamps
   const map = loadScheduledMap();
   map[lista.id] = Array.isArray(map[lista.id]) ? map[lista.id] : [];
   const now = Date.now();
@@ -743,7 +763,7 @@ async function scheduleNotificationsForList(lista) {
   const f = parseFechaFromString(lista.fecha);
   if (!f || isNaN(f)) return;
 
-  const timersForList = [];
+  const cancelsForList = [];
 
   for (const offset of NOTIFY_OFFSETS_DAYS) {
     const notifyDay = addDays(f, -offset);
@@ -751,8 +771,7 @@ async function scheduleNotificationsForList(lista) {
     if (notifyAt <= now) continue;
     if (existingTimestamps.has(notifyAt)) continue;
 
-    // Usamos scheduleAt en vez de setTimeout directo
-    const timeoutIds = scheduleAt(notifyAt, async () => {
+    const cancelFn = scheduleAt(notifyAt, async () => {
       try {
         let listaActual = listasCache.get(lista.id) || lista;
         if (navigator.onLine && canUseFirestore()) {
@@ -763,48 +782,47 @@ async function scheduleNotificationsForList(lista) {
         }
         if (!listaActual) return;
         if (!esPendientePorFechaOnly(listaActual)) { cancelScheduledNotificationsForList(lista.id); actualizarNotificaciones(); return; }
-        const dias = offset;
+
+        const dias = calcularDiasRestantes(parseFechaFromString(listaActual.fecha));
         const title = `Lista: ${listaActual.lugar || "Sin lugar"} vence en ${dias} día(s)`;
         const body = `Fecha: ${formatearFecha(listaActual.fecha)} — Abre la app para ver o marcar como hecha.`;
 
-        // En vez de crear Notification en el navegador, usamos la función in-app
         sendBrowserNotification(title, body, { listaId: listaActual.id });
-
-        // Actualiza UI (badge / lista)
         actualizarNotificaciones();
       } catch(e){ console.error("Error timeout notificación (in-app):", e); }
     });
 
-    // timeoutIds es un array (puede tener varios ids si el delay era muy largo)
-    timersForList.push(...timeoutIds);
+    cancelsForList.push(cancelFn);
     map[lista.id].push(notifyAt);
     existingTimestamps.add(notifyAt);
   }
 
   map[lista.id] = Array.from(new Set(map[lista.id])).filter(ts => ts > Date.now()).sort((a,b)=>a-b);
-  scheduledTimeouts.set(lista.id, timersForList);
+  scheduledTimeouts.set(lista.id, cancelsForList);
   saveScheduledMap(map);
 }
 
 function rebuildScheduledTimeoutsFromStorage() {
   const map = loadScheduledMap();
   const now = Date.now();
+
   Object.entries(map).forEach(([listaId, timestamps]) => {
     timestamps = Array.isArray(timestamps) ? timestamps : [];
     const futureTs = timestamps.filter(ts => ts > now);
-    if (futureTs.length === 0) { 
-      delete map[listaId]; 
-      saveScheduledMap(map); 
-      return; 
+    if (futureTs.length === 0) {
+      delete map[listaId]; // corrección defensiva: limpiar si no hay futuros
+      saveScheduledMap(map);
+      return;
     }
 
-    // Si ya existían timers para esta lista, límpialos (defensivo)
-    const prev = scheduledTimeouts.get(listaId) || [];
-    prev.forEach(id => { try { clearTimeout(id); } catch(e){} });
-    const timersForList = [];
+    // cancela timers previos si hubiera
+    const prevCancels = scheduledTimeouts.get(listaId) || [];
+    prevCancels.forEach(fn => { try { fn(); } catch {} });
+
+    const cancelsForList = [];
 
     futureTs.forEach(ts => {
-      const timeoutIds = scheduleAt(ts, async () => {
+      const cancelFn = scheduleAt(ts, async () => {
         try {
           let listaActual = listasCache.get(listaId) || null;
           if (navigator.onLine && canUseFirestore()) {
@@ -818,15 +836,15 @@ function rebuildScheduledTimeoutsFromStorage() {
             const body = `Fecha: ${formatearFecha(listaActual.fecha)} — Abre la app para ver o marcar como hecha.`;
             sendBrowserNotification(title, body, { listaId: listaActual.id });
           }
-        } catch(e){ console.error("Error rebuild scheduled (in-app):", e); } finally { actualizarNotificaciones(); }
+        } catch(e){ console.error("Error rebuild scheduled (in-app):", e); }
+        finally { actualizarNotificaciones(); }
       });
 
-      timersForList.push(...timeoutIds);
+      cancelsForList.push(cancelFn);
     });
 
-    scheduledTimeouts.set(listaId, timersForList);
-    // guardamos el mapa actualizado (por si eliminamos entradas)
-    saveScheduledMap(map);
+    scheduledTimeouts.set(listaId, cancelsForList);
+    saveScheduledMap(map); // guardamos el mapa (ya limpio si aplicó)
   });
 }
 
@@ -841,6 +859,41 @@ function esPendientePorFechaOnly(lista) {
   const limite = addDays(hoy, MAX_NOTIFY_WINDOW_DAYS);
   const listaDay = startOfDay(f);
   return listaDay.getTime() >= hoy.getTime() && listaDay.getTime() <= limite.getTime();
+}
+
+function esNotificacionRelevante(lista) {
+  if (!lista || !lista.fecha) return false;
+  if (lista.completada) return false;
+  if (lista._notificacionDescartada) return false;
+
+  const f = parseFechaFromString(lista.fecha);
+  if (!f || isNaN(f)) return false;
+
+  const hoy = startOfDay(new Date());
+  const diaLista = startOfDay(f);
+  const limiteFuturo = addDays(hoy, MAX_NOTIFY_WINDOW_DAYS);
+
+  if (lista.pagoMensual) {
+    return diaLista.getTime() >= hoy.getTime() && diaLista.getTime() <= limiteFuturo.getTime();
+  } else {
+    const limitePasado = addDays(hoy, -MAX_PAST_NOTIFY_DAYS);
+    const dentroVentana = diaLista.getTime() >= limitePasado.getTime() && diaLista.getTime() <= limiteFuturo.getTime();
+    if (!dentroVentana) return false;
+
+    // 🔒 Regla anti-retroactivas:
+    if (diaLista.getTime() < hoy.getTime()) {
+      const c1 = parseFechaFromString(lista.createdAt);
+      const c2 = parseFechaFromString(lista.createdAtClient);
+      const created = c1 || c2 || null;
+
+      // Si no tenemos fecha de creación fiable, por defecto NO mostramos atrasadas recién creadas
+      if (!created) return false;
+
+      // Si se creó DESPUÉS del vencimiento, no mostrar
+      if (startOfDay(created).getTime() > diaLista.getTime()) return false;
+    }
+    return true;
+  }
 }
 
 /* ======= MONTHLY HELPERS (usar cache) ======= */
@@ -940,9 +993,10 @@ function calcularDiasRestantes(fecha) {
 }
 
 function colorForDias(dias) {
-  if (dias <= 3) return { border: "#e53e3e", bg: "#fff5f5" };
-  if (dias <= 10) return { border: "#f59e0b", bg: "#fff7ed" };
-  return { border: "#10b981", bg: "#f0fdf4" };
+  if (dias < 0)  return { border: "#9ca3af", bg: "#f3f4f6" }; // gris para caducadas
+  if (dias <= 3) return { border: "#e53e3e", bg: "#fff5f5" }; // rojo urgente
+  if (dias <= 10) return { border: "#f59e0b", bg: "#fff7ed" }; // ámbar
+  return { border: "#10b981", bg: "#f0fdf4" };                 // verde
 }
 
 /* ------------------ HELPERS FECHAS ADICIONALES ------------------ */
@@ -1167,7 +1221,7 @@ function setupNotifsFilterUI() {
 // Esta función aplica el filtro en memoria y manda a renderizar lista + summary
 function applyNotifsFilterAndRender() {
   const endDate = getNotifsFilterEndDate(); // Date | null
-  let pendientes = Array.from(listasCache.values()).filter(l => esPendientePorFechaOnly(l) && !l.isEvento);
+  let pendientes = Array.from(listasCache.values()).filter(l => esNotificacionRelevante(l) && !l.isEvento);
 
   if (endDate) {
     pendientes = pendientes.filter(l => {
@@ -1175,16 +1229,14 @@ function applyNotifsFilterAndRender() {
       if (!f) return false;
       return startOfDay(f).getTime() <= startOfDay(endDate).getTime();
     });
-    // Render y resumen; el badge lo actualiza internamente renderListaNotificaciones
     renderListaNotificaciones(pendientes);
     updateNotifsSummaryWithFilter(endDate);
   } else {
-    const pendientesDefault = Array.from(listasCache.values()).filter(l => esPendientePorFechaOnly(l) && !l.isEvento);
-    notificacionesMostradasCount = NOTIFICATIONS_PAGE_INCREMENT; // opcional
+    const pendientesDefault = Array.from(listasCache.values()).filter(l => esNotificacionRelevante(l) && !l.isEvento);
+    notificacionesMostradasCount = NOTIFICATIONS_PAGE_INCREMENT;
     renderListaNotificaciones(pendientesDefault);
     updateNotifsSummaryWithFilter(null);
-    // Nada de renderBadge aquí
-  }
+  }  
 }
 
 // Llamar setupNotifsFilterUI() desde DOMContentLoaded (ya tienes la rutina init): 
@@ -1195,12 +1247,33 @@ const NOTIFICATIONS_PAGE_INCREMENT = 5;
 
 function cargarMasNotificaciones() {
   notificacionesMostradasCount += NOTIFICATIONS_PAGE_INCREMENT;
-  const pendientes = Array.from(listasCache.values()).filter(l => esPendientePorFechaOnly(l) && !l.isEvento);
+  const endDate = getNotifsFilterEndDate();
+  let pendientes = Array.from(listasCache.values())
+    .filter(l => esNotificacionRelevante(l) && !l.isEvento);
+
+  if (endDate) {
+    const end = startOfDay(endDate);
+    pendientes = pendientes.filter(l => {
+      const f = parseFechaFromString(l.fecha);
+      return f && startOfDay(f).getTime() <= end.getTime();
+    });
+  }
   renderListaNotificaciones(pendientes);
 }
+
 function mostrarMenosNotificaciones() {
   notificacionesMostradasCount = NOTIFICATIONS_PAGE_INCREMENT;
-  const pendientes = Array.from(listasCache.values()).filter(l => esPendientePorFechaOnly(l) && !l.isEvento);
+  const endDate = getNotifsFilterEndDate();
+  let pendientes = Array.from(listasCache.values())
+    .filter(l => esNotificacionRelevante(l) && !l.isEvento);
+
+  if (endDate) {
+    const end = startOfDay(endDate);
+    pendientes = pendientes.filter(l => {
+      const f = parseFechaFromString(l.fecha);
+      return f && startOfDay(f).getTime() <= end.getTime();
+    });
+  }
   renderListaNotificaciones(pendientes);
 }
 window.cargarMasNotificaciones = cargarMasNotificaciones;
@@ -1216,7 +1289,7 @@ function renderListaNotificaciones(pendientes) {
     const li = document.createElement("li");
     li.textContent = "No hay notificaciones por fecha.";
     ul.appendChild(li);
-    renderBadge(0);
+    renderMenuBadge(0, 'notifs');
     return;
   }
 
@@ -1228,7 +1301,7 @@ function renderListaNotificaciones(pendientes) {
   const mostradas = pendientes.slice(0, notificacionesMostradasCount);
 
   // Badge debe reflejar el total pendiente (no la cantidad mostrada)
-  renderBadge(totalCount);
+  renderMenuBadge(totalCount, 'notifs');
 
   // Renderizar solo las que toca mostrar
   mostradas.forEach(lista => {
@@ -1238,9 +1311,9 @@ function renderListaNotificaciones(pendientes) {
 
     const fecha = parseFechaFromString(lista.fecha);
     const dias = calcularDiasRestantes(fecha);
-    const estadoTexto = dias < 0 ? `Vencida hace ${Math.abs(dias)} día(s)` :
-                       dias === 0 ? "Vence hoy" :
-                       `Vence en ${dias} día(s)`;
+    const estadoTexto = dias < 0 ? `Caducó hace ${Math.abs(dias)} día(s)` :
+                      dias === 0 ? "Vence hoy" :
+                      `Vence en ${dias} día(s)`;
     const total = Array.isArray(lista.productos) ? lista.productos.reduce((s,p)=>s+(p.precio||0),0).toFixed(2) : "0.00";
 
     const productosHTML = (Array.isArray(lista.productos) ? lista.productos : []).map(p => {
@@ -1417,10 +1490,9 @@ async function actualizarNotificaciones(listasExternas = null) {
     }
 
     const pendientesPorFecha = listas.filter(l => esPendientePorFechaOnly(l) && !l.isEvento);
-    const eventosPorFecha    = listas.filter(l => esPendientePorFechaOnly(l) &&  l.isEvento);
+    const eventosPorFecha   = listas.filter(l => esPendientePorFechaOnly(l) &&  l.isEvento);
 
-    // Eventos (su badge lo maneja renderEvents)
-    renderEvents(eventosPorFecha);
+    renderEvents(listas.filter(l => l.isEvento));
 
     // Notifs: se delega a applyNotifsFilterAndRender -> renderListaNotificaciones (ahí se actualiza el badge)
     applyNotifsFilterAndRender();
@@ -1517,7 +1589,7 @@ function renderEvents(eventos) {
 
   // === NUEVO: calcular totales y mostrar contador ===
   const totalStored = Array.from(listasCache.values())
-    .filter(l => esPendientePorFechaOnly(l) && l.isEvento).length;
+  .filter(l => l.isEvento).length;
   const filteredTotal = eventos.length;
   updateEventsCountDisplay(filteredTotal, totalStored);
 
@@ -1796,6 +1868,7 @@ function migrateScheduledMap(tmpId, newId) {
 async function guardarLista(nuevaLista) {
   try {
     nuevaLista.createdAt = safeServerTimestamp();
+    nuevaLista.createdAtClient = new Date().toISOString(); // 👈 nuevo
     if (!('_notificacionDescartada' in nuevaLista)) nuevaLista._notificacionDescartada = false;
 
     if (navigator.onLine && canUseFirestore()) {
@@ -1882,8 +1955,11 @@ function mostrarListasDesdeCache(resetCount=false, soloPendientes=false) {
 
     // 1) Base ordenada por fecha DESC
     let listas = Array.from(listasCache.values())
-      .sort((a,b) => parseFechaFromString(b.fecha) - parseFechaFromString(a.fecha));
-
+    .sort((a,b) => {
+      const ta = parseFechaFromString(a.fecha);
+      const tb = parseFechaFromString(b.fecha);
+      return (tb ? +tb : 0) - (ta ? +ta : 0);
+    });  
     // 2) Filtro por lugar
     listas = listas.filter(l => normalizarTexto(l.lugar || "").includes(filtroLugar));
 
@@ -2384,7 +2460,8 @@ if (hayError || productos.length === 0) return;
       if (navigator.onLine && canUseFirestore()) {
         await updateDoc(doc(db, "listas", idLista), datos);
         mostrarMensaje("Lista actualizada correctamente (en la nube).", "success");
-        listasCache.set(idLista, { id: idLista, ...datos });
+        const prevCached = listasCache.get(idLista) || {};
+        listasCache.set(idLista, { ...prevCached, ...datos, id: idLista });
         await schedulePersistCacheToIndexedDB();
         cancelScheduledNotificationsForList(idLista);
         if (!datos._notificacionDescartada && esPendientePorFechaOnly(datos)) await scheduleNotificationsForList({ id: idLista, ...datos });
@@ -2393,7 +2470,8 @@ if (hayError || productos.length === 0) return;
         const updates = loadPendingUpdates();
         updates[idLista] = { ...(updates[idLista]||{}), ...datos };
         savePendingUpdates(updates);
-        listasCache.set(idLista, { id: idLista, ...datos });
+        const prevCached = listasCache.get(idLista) || {};
+        listasCache.set(idLista, { ...prevCached, ...datos, id: idLista });        
         await schedulePersistCacheToIndexedDB();
         cancelScheduledNotificationsForList(idLista);
         if (!datos._notificacionDescartada && esPendientePorFechaOnly(datos)) {
@@ -2404,7 +2482,7 @@ if (hayError || productos.length === 0) return;
       }
     } catch(e){ mostrarMensaje("Error actualizando la lista: " + e.message, "error"); console.error(e); }
   } else {
-    await guardarLista({ ...datos, createdAt: safeServerTimestamp(), _notificacionDescartada: false });
+    await guardarLista({ ...datos, _notificacionDescartada: false });
   }
 
   e.target.reset();
@@ -2866,7 +2944,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       }
     } catch(e){ console.error('Error iniciando flatpickr (eventos):', e); }
 
-    rebuildScheduledTimeoutsFromStorage();
+    if (isLeaderTab) rebuildScheduledTimeoutsFromStorage();
     actualizarNotificaciones();
     // inicializar filtro notifs
     setupNotifsFilterUI();
@@ -3006,9 +3084,9 @@ window.limpiarFechasEventos = limpiarFechasEventos;
 
 function refrescarEventosFiltrados(reset=false){
   if (reset) eventosMostradosCount = EVENTS_PAGE_INCREMENT;
-  const eventosBase = Array.from(listasCache.values())
-    .filter(l => esPendientePorFechaOnly(l) && l.isEvento);
-  renderEvents(eventosBase); // renderEvents aplicará los filtros de lugar/fechas
+  const eventosBase = Array.from(listasCache.values())  // <- sin esPendientePorFechaOnly
+    .filter(l => l.isEvento);
+  renderEvents(eventosBase);
 }
 window.refrescarEventosFiltrados = refrescarEventosFiltrados;
 
@@ -3101,7 +3179,7 @@ function generarContenidoICS(lista, opts = {}) {
 
   const title = (lista.lugar && lista.lugar.trim()) ? `Lista: ${lista.lugar.trim()}` : 'Lista de Compras';
   const description = (Array.isArray(lista.productos) && lista.productos.length)
-    ? lista.productos.map(p => `${p.nombre} — $${(p.precio||0).toFixed(2)}${p.descripcion ? ` (${p.descripcion})` : ''}`).join('\n')
+    ? lista.productos.map(p => `${p.nombre} — $${Number(p.precio||0).toFixed(2)}${p.descripcion ? ` (${p.descripcion})` : ''}`).join('\n')
     : 'Sin productos detallados';
   const location = lista.lugar ? lista.lugar.replace(/\r?\n/g, ' ') : '';
   const uid = `lista-${lista.id || generateClientId()}@miapp`;
@@ -3137,8 +3215,12 @@ function descargarICS(lista, opts = {}) {
   const blob = new Blob([contenido], { type: 'text/calendar;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  const safeName = (lista.lugar ? lista.lugar.replace(/\s+/g,'_').slice(0,40) : 'lista');
-  const nombre = `${safeName}_${lista.fecha || ''}.ics`;
+  const safeName = (lista.lugar || 'lista')
+  .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+  .replace(/[^a-zA-Z0-9_-]+/g,'_')
+  .slice(0,40);
+  const datePart = formatDateToInput(parseFechaFromString(lista.fecha)) || '';
+  const nombre = `${safeName}_${datePart}.ics`;
   a.href = url;
   a.download = nombre;
   document.body.appendChild(a);
@@ -3208,7 +3290,7 @@ window.importarJSON = async function (file) {
 
     // Persistir y refrescar UI
     await persistCacheToIndexedDB();
-    rebuildScheduledTimeoutsFromStorage();
+    if (isLeaderTab) rebuildScheduledTimeoutsFromStorage();
     debouncedMostrarListas();
     debouncedActualizarNotificaciones();
 
