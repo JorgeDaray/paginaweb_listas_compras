@@ -3294,34 +3294,215 @@ window.exportarJSON = async function () {
   }
 };
 
-window.importarJSON = async function (file) {
+function keyLugarFecha(x){
+  const lugar = normalizarTexto(x?.lugar || "");
+  const fecha = typeof x?.fecha === "string" ? x.fecha : (x?.fecha ? formatDateToInput(parseFechaFromString(x.fecha)) : "");
+  return `${lugar}__${fecha}`;
+}
+
+// Busca duplicado por id o por (lugar+fecha)
+function findDuplicateLocal(it){
+  if (!it) return null;
+  const id = (typeof it.id === "string") ? it.id : null;
+  if (id && listasCache.has(id)) return listasCache.get(id);
+  const k = keyLugarFecha(it);
+  for (const v of listasCache.values()){
+    if (keyLugarFecha(v) === k) return v;
+  }
+  return null;
+}
+
+// Funde dos listas (conserva flags si existen)
+function mergeList(existing, incoming){
+  const base = { ...existing };
+  base.lugar  = incoming.lugar ?? base.lugar;
+  base.fecha  = incoming.fecha ? formatDateToInput(parseFechaFromString(incoming.fecha)) : base.fecha;
+
+  // flags
+  base._notificacionDescartada = Boolean(existing._notificacionDescartada) && Boolean(incoming._notificacionDescartada);
+  if (typeof existing.completada === 'boolean' || typeof incoming.completada === 'boolean') {
+    base.completada = Boolean(existing.completada) && Boolean(incoming.completada);
+  }
+  if ('pagoMensual' in existing || 'pagoMensual' in incoming) {
+    base.pagoMensual = Boolean(existing.pagoMensual || incoming.pagoMensual);
+  }
+  if ('isEvento' in existing || 'isEvento' in incoming) {
+    base.isEvento = Boolean(existing.isEvento || incoming.isEvento);
+  }
+  if ('estado' in incoming) base.estado = incoming.estado;
+  else if (!base.estado) base.estado = 'pendiente';
+
+  // fusionar productos por nombre (case-insensitive)
+  const map = new Map(); // nombreNormalizado -> producto
+  const addAll = (arr=[]) => {
+    arr.forEach(p => {
+      const nombre = String(p?.nombre || '').trim();
+      if (!nombre) return;
+      const key = normalizarTexto(nombre);
+      const prev = map.get(key);
+      const precio = Number(p?.precio || 0);
+      const desc   = p?.descripcion ? String(p.descripcion) : '';
+
+      if (!prev) {
+        map.set(key, { nombre, precio, descripcion: desc });
+      } else {
+        // mantener el precio no-cero si alguno lo trae
+        const mejorPrecio = (prev.precio && prev.precio > 0) ? prev.precio : precio;
+        // concatenar descripciones si son distintas
+        const mergedDesc = (prev.descripcion && desc && prev.descripcion !== desc)
+          ? `${prev.descripcion} | ${desc}` : (prev.descripcion || desc || '');
+        map.set(key, { nombre, precio: Number(mejorPrecio || 0), descripcion: mergedDesc });
+      }
+    });
+  };
+  addAll(existing.productos);
+  addAll(incoming.productos);
+  base.productos = Array.from(map.values());
+  return base;
+}
+
+window.importarJSON = async function (file, { mode = 'merge', pushToCloud = true } = {}) {
   if (!file) return;
   try {
     const text = await file.text();
-    const arr = JSON.parse(text);
-    if (!Array.isArray(arr)) throw new Error("Formato inválido: se esperaba un arreglo.");
+    const rawArr = JSON.parse(text);
+    if (!Array.isArray(rawArr)) throw new Error("Formato inválido: se esperaba un arreglo.");
 
-    // Merge simple: sobreescribe por id si ya existía
-    let added = 0;
-    arr.forEach(it => {
-      if (it && it.id) {
-        listasCache.set(it.id, it);
-        added++;
-      }
+    // 1) REPLACE opcional: limpia todo lo local antes de importar
+    if (mode === 'replace') {
+      cancelAllScheduledNotifications({ preserveStorage: false });
+      listasCache.clear();
+      await saveAllToIndexedDB([]).catch(()=>{});
+    }
+
+    // 2) Normalizar
+    const norm = rawArr.map((it) => {
+      const x = { ...(it || {}) };
+      if (x.fecha && x.fecha.toDate) x.fecha = formatDateToInput(x.fecha.toDate());
+      if (x.fecha instanceof Date)   x.fecha = formatDateToInput(x.fecha);
+      x.productos = Array.isArray(x.productos) ? x.productos.map(p => ({
+        nombre: String(p?.nombre || '').trim(),
+        precio: Number(p?.precio || 0),
+        descripcion: p?.descripcion ? String(p.descripcion) : ''
+      })) : [];
+      if (typeof x._notificacionDescartada !== 'boolean') x._notificacionDescartada = false;
+      if (typeof x.completada !== 'boolean') x.completada = false;
+      return x;
     });
 
-    // Persistir y refrescar UI
+    // 3) Mezclar contra lo que ya existe en cache (por id o por lugar+fecha)
+    const toPersist = []; // [{ finalId, data }] para cache/IDB
+    const toUpload  = []; // [{ localId, data }] para nube/colas
+
+    for (const incoming of norm) {
+      const dupe = findDuplicateLocal(incoming);
+      if (dupe) {
+        const merged = mergeList(dupe, incoming);
+        const finalId = dupe.id;               // mantenemos el id del existente
+        listasCache.set(finalId, { id: finalId, ...merged });
+        toPersist.push({ finalId, data: merged });
+        toUpload.push({ localId: finalId, data: merged, hasStableId: true });
+      } else {
+        // nuevo: si viene id estable, lo respetamos ONLINE; offline lo trataremos como create
+        let localId = (incoming.id && typeof incoming.id === 'string') ? incoming.id : `tmp_${generateClientId()}`;
+        listasCache.set(localId, { id: localId, ...incoming });
+        toPersist.push({ finalId: localId, data: incoming });
+        toUpload.push({ localId, data: incoming, hasStableId: !!incoming.id && !String(incoming.id).startsWith('tmp_') });
+      }
+    }
+
+    // 4) Persistir local y refrescar UI / timers
     await persistCacheToIndexedDB();
     if (isLeaderTab) rebuildScheduledTimeoutsFromStorage();
     debouncedMostrarListas();
     debouncedActualizarNotificaciones();
+    mostrarMensaje(`Importación local completa. (${toPersist.length} elemento(s))`, "success");
 
-    mostrarMensaje(`Importación completada. (${added} elemento(s))`, "success");
+    if (!pushToCloud) return;
+
+    // 5) Si hay conexión: SUBIR (upsert). Respeta mezcla que ya hicimos.
+    if (navigator.onLine && canUseFirestore()) {
+      try {
+        const batch = writeBatch(db);
+        const remap = {};
+
+        for (const { localId, data, hasStableId } of toUpload) {
+          if (hasStableId) {
+            // upsert por id existente o nuevo con ese id
+            batch.set(doc(db, 'listas', localId), data);
+            remap[localId] = localId;
+          } else {
+            const ref = doc(collection(db, 'listas'));
+            batch.set(ref, data);
+            remap[localId] = ref.id;
+          }
+        }
+
+        bumpSyncLock();
+        await batch.commit();
+        incrClientWriteCounter(toUpload.length);
+
+        // remapear ids locales tmp_ -> ids reales
+        for (const { localId, data } of toUpload) {
+          const newId = remap[localId];
+          if (!newId || newId === localId) {
+            const merged = { id: localId, ...data };
+            listasCache.set(localId, merged);
+            await saveOneToIndexedDB(merged).catch(()=>{});
+            continue;
+          }
+          const merged = { id: newId, ...data };
+          listasCache.delete(localId);
+          await deleteOneFromIndexedDB(localId).catch(()=>{});
+          listasCache.set(newId, merged);
+          await saveOneToIndexedDB(merged).catch(()=>{});
+          try { migrateScheduledMap(localId, newId); } catch {}
+        }
+
+        await schedulePersistCacheToIndexedDB().catch(()=>{});
+        debouncedMostrarListas();
+        debouncedActualizarNotificaciones();
+        mostrarMensaje("Importación subida a la nube.", "success");
+      } catch (e) {
+        console.error(e);
+        mostrarMensaje("No se pudo subir a la nube la importación (error).", "error");
+      }
+      return;
+    }
+
+    // 6) OFFLINE: encolar para sincronizar luego
+    try {
+      const updates = loadPendingUpdates();
+      const creates = loadPendingCreates();
+
+      for (const { localId, data, hasStableId } of toUpload) {
+        const existsLocal = listasCache.has(localId);
+
+        if (hasStableId && existsLocal) {
+          // si existe en cache con ese id, lo tratamos como update diferido
+          updates[localId] = { ...(updates[localId] || {}), ...data };
+        } else {
+          // create diferido SIEMPRE (ignoramos id entrante en offline para evitar update inexistente)
+          const clientId = localId.startsWith('tmp_') ? localId.slice(4) : generateClientId();
+          const payload = { ...data, clientId };
+          delete payload.id; // que la nube genere id real al subir
+          if (!creates.some(c => c?.clientId === clientId)) creates.push(payload);
+        }
+      }
+
+      savePendingUpdates(updates);
+      savePendingCreates(creates);
+      mostrarMensaje("Sin conexión: importación quedará en cola y se subirá al reconectar.", "offline");
+    } catch (e) {
+      console.error("Error encolando importación offline:", e);
+      mostrarMensaje("Importación local hecha, pero no se pudo encolar para subir.", "error");
+    }
   } catch (e) {
     console.error(e);
     mostrarMensaje("Error importando: " + (e.message || e), "error");
   }
 };
+
 window.agregarProducto = agregarProducto;
 window.eliminarProducto = eliminarProducto;
 window.alternarDetalle = alternarDetalle;
