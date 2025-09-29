@@ -2808,6 +2808,22 @@ async function startListasListener() {
   });
 })();
 
+/* ========= VALIDAR JSON DE IMPORTACIÓN ========= */
+
+/** Reglas de validación:
+ * - El archivo debe ser un arreglo de objetos "lista".
+ * - Campos por lista:
+ *   - id: opcional string
+ *   - lugar: string no vacío (requerido)
+ *   - fecha: string 'YYYY-MM-DD' válido (requerido)
+ *   - productos: array (requerido; puede estar vacío, se marca como advertencia)
+ *      - nombre: string no vacío (requerido)
+ *      - precio: número >= 0 (se aceptan strings numéricos como advertencia)
+ *      - descripcion: string opcional
+ *   - _notificacionDescartada, completada, pagoMensual, isEvento: boolean opcional
+ *   - estado: opcional string en {'pendiente','normal','expirada','caducado'}
+ */
+
 /* ======= INICIALIZAR ONLOAD (modificado para initFirebase + modo offline parcial) ======= */
 document.addEventListener("DOMContentLoaded", async () => {
   try {
@@ -3502,6 +3518,305 @@ window.importarJSON = async function (file, { mode = 'merge', pushToCloud = true
     mostrarMensaje("Error importando: " + (e.message || e), "error");
   }
 };
+
+// === Validador de backups (scope global) ===
+(function () {
+  function isISODate(str) {
+    if (typeof str !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(str)) return false;
+    const [y, m, d] = str.split('-').map(Number);
+    const dt = new Date(y, m - 1, d);
+    return dt instanceof Date && !isNaN(dt) &&
+           dt.getFullYear() === y && dt.getMonth() === m - 1 && dt.getDate() === d;
+  }
+
+  function validarProducto(p, idxLista, idxProd) {
+    const errs = [];
+    const warns = [];
+    if (typeof p !== 'object' || p === null) {
+      errs.push(`#${idxLista}: productos[${idxProd}] no es un objeto`);
+      return { errs, warns };
+    }
+    if (!p.nombre || typeof p.nombre !== 'string' || !p.nombre.trim()) {
+      errs.push(`#${idxLista}: productos[${idxProd}].nombre debe ser string no vacío`);
+    }
+    const precioRaw = p.precio;
+    const num = (typeof precioRaw === 'number')
+      ? precioRaw
+      : (typeof precioRaw === 'string' ? Number(precioRaw.replace(',', '.')) : NaN);
+    if (!Number.isFinite(num) || num < 0) {
+      errs.push(`#${idxLista}: productos[${idxProd}].precio debe ser número >= 0 (recibido: ${JSON.stringify(precioRaw)})`);
+    } else if (typeof precioRaw === 'string') {
+      warns.push(`#${idxLista}: productos[${idxProd}].precio es string numérico; se convertirá a número`);
+    }
+    if (p.descripcion != null && typeof p.descripcion !== 'string') {
+      errs.push(`#${idxLista}: productos[${idxProd}].descripcion debe ser string si existe`);
+    }
+    return { errs, warns };
+  }
+
+  function validarLista(it, idx) {
+    const errors = [];
+    const warnings = [];
+
+    if (typeof it !== 'object' || it === null) {
+      errors.push(`#${idx}: elemento no es un objeto`);
+      return { errors, warnings };
+    }
+    if (it.id != null && typeof it.id !== 'string') {
+      errors.push(`#${idx}: id debe ser string si existe`);
+    }
+    if (!it.lugar || typeof it.lugar !== 'string' || !it.lugar.trim()) {
+      errors.push(`#${idx}: lugar es requerido (string no vacío)`);
+    }
+    if (!it.fecha || typeof it.fecha !== 'string') {
+      errors.push(`#${idx}: fecha es requerida (string 'YYYY-MM-DD')`);
+    } else if (!isISODate(it.fecha)) {
+      errors.push(`#${idx}: fecha inválida (${JSON.stringify(it.fecha)}), se espera 'YYYY-MM-DD' real`);
+    }
+
+    if (!Array.isArray(it.productos)) {
+      errors.push(`#${idx}: productos debe ser un arreglo`);
+    } else {
+      if (it.productos.length === 0) {
+        warnings.push(`#${idx}: productos vacío — se permitirá, pero revisa si es intencional`);
+      }
+      it.productos.forEach((p, j) => {
+        const { errs, warns } = validarProducto(p, idx, j);
+        errors.push(...errs);
+        warnings.push(...warns);
+      });
+    }
+
+    ['_notificacionDescartada','completada','pagoMensual','isEvento'].forEach(f => {
+      if (it[f] != null && typeof it[f] !== 'boolean') {
+        errors.push(`#${idx}: ${f} debe ser boolean si existe`);
+      }
+    });
+
+    if (it.estado != null) {
+      const ok = ['pendiente','normal','expirada','caducado'];
+      if (!ok.includes(String(it.estado))) {
+        errors.push(`#${idx}: estado debe ser uno de ${ok.join(', ')}`);
+      }
+    }
+
+    if (it.createdAt != null && typeof it.createdAt === 'object') {
+      warnings.push(`#${idx}: createdAt parece objeto (posible Timestamp); se ignorará/normalizará al importar`);
+    }
+    if (it.createdAtClient != null && typeof it.createdAtClient !== 'string') {
+      warnings.push(`#${idx}: createdAtClient no es string; se sobrescribirá al importar`);
+    }
+
+    return { errors, warnings };
+  }
+
+  function validarEstructuraBackup(json) {
+    const errors = [];
+    const warnings = [];
+    const stats = { listas: 0, productos: 0 };
+
+    if (!Array.isArray(json)) {
+      errors.push('La raíz debe ser un arreglo de listas.');
+      return { errors, warnings, stats };
+    }
+
+    json.forEach((it, idx) => {
+      const { errors: e2, warnings: w2 } = validarLista(it, idx);
+      errors.push(...e2);
+      warnings.push(...w2);
+      stats.listas += 1;
+      if (Array.isArray(it?.productos)) stats.productos += it.productos.length;
+    });
+
+    return { errors, warnings, stats };
+  }
+
+  // 👇 Exponer globalmente para que el botón lo encuentre
+  window.validarEstructuraBackup = validarEstructuraBackup;
+})();
+
+/* ==== Validar JSON: SOLO en la sección #verListas ==== */
+(function mountValidateJsonOnlyInVerListas(){
+  const SECTION_ID = 'verListas';
+  const IMPORT_ID = 'btnImportarJSON';
+  const EXPORT_ID = 'btnExportarJSON';
+  const VALIDATE_ID = 'btnValidarJSON';
+  const HIDDEN_INPUT_ID = 'inputValidarJSONHidden';
+
+  // Crea el botón/input si no existen (no lo inserta aún)
+  function ensureControls() {
+    let btn = document.getElementById(VALIDATE_ID);
+    if (!btn) {
+      btn = document.createElement('button');
+      btn.id = VALIDATE_ID;
+      btn.type = 'button';
+      btn.className = 'btn btn--secondary';
+      btn.textContent = 'Validar JSON';
+      // etiqueta para poder identificarlo y moverlo de forma segura
+      btn.dataset.scope = 'verListas';
+    }
+
+    let fileInput = document.getElementById(HIDDEN_INPUT_ID);
+    if (!fileInput) {
+      fileInput = document.createElement('input');
+      fileInput.type = 'file';
+      fileInput.accept = '.json,application/json';
+      fileInput.id = HIDDEN_INPUT_ID;
+      fileInput.style.display = 'none';
+      document.body.appendChild(fileInput);
+    }
+
+    // wiring (reutiliza tu validador)
+    btn.onclick = () => fileInput.click();
+    fileInput.onchange = async () => {
+      const file = fileInput.files && fileInput.files[0];
+      if (!file) return;
+      try {
+        const text = await file.text();
+        let json;
+        try { json = JSON.parse(text); }
+        catch (e) {
+          mostrarMensaje('El archivo no es JSON válido.', 'error');
+          alert('❌ Error: JSON mal formado.\n\nDetalle: ' + (e.message || e));
+          fileInput.value = ''; return;
+        }
+        if (typeof validarEstructuraBackup !== 'function') {
+          mostrarMensaje('No se encontró el validador (validarEstructuraBackup).', 'error');
+          fileInput.value = ''; return;
+        }
+        const result = validarEstructuraBackup(json);
+        if (result.errors.length === 0) {
+          const msg = `Compatible ✅ | Listas: ${result.stats.listas} · Productos: ${result.stats.productos}` +
+                      (result.warnings.length ? ` · Advertencias: ${result.warnings.length}` : '');
+          mostrarMensaje(msg, 'success');
+          if (result.warnings.length) {
+            console.warn('Advertencias:', result.warnings);
+            alert('⚠️ Advertencias (no bloquean):\n\n' + result.warnings.slice(0, 40).join('\n'));
+          }
+        } else {
+          mostrarMensaje(`Archivo incompatible ❌ · Errores: ${result.errors.length}`, 'error');
+          console.error('Errores de validación:', result.errors);
+          alert('❌ Errores (primeras 40):\n\n' + result.errors.slice(0, 40).join('\n'));
+        }
+      } catch (e) {
+        console.error(e);
+        mostrarMensaje('No se pudo validar el archivo.', 'error');
+        alert('❌ Error al validar: ' + (e.message || e));
+      } finally {
+        fileInput.value = '';
+      }
+    };
+
+    return { btn, fileInput };
+  }
+
+  // Inserta el botón SOLO dentro de #verListas, al lado de Importar/Exportar
+// ⬇️ Reemplaza COMPLETA esta función dentro de mountValidateJsonOnlyInVerListas
+function placeInVerListas() {
+  const section = document.getElementById('verListas');
+  if (!section) return false; // no existe la sección
+
+  // Asegura los controles listos (crea botón e input si no existen y les conecta handlers)
+  const { btn } = ensureControls();
+
+  // Si ya está dentro de #verListas, listo
+  if (btn.parentElement && section.contains(btn)) return true;
+
+  // Intenta ubicarse junto a Importar/Exportar si existen
+  const importBtn = section.querySelector('#btnImportarJSON');
+  const exportBtn = section.querySelector('#btnExportarJSON');
+
+  let container = null;
+  if (importBtn && exportBtn && importBtn.parentElement === exportBtn.parentElement) {
+    container = importBtn.parentElement;
+  } else {
+    container = exportBtn?.parentElement || importBtn?.parentElement || null;
+  }
+
+  if (container) {
+    // Inserta después de Exportar si existe, si no, después de Importar
+    if (exportBtn) {
+      container.insertBefore(btn, exportBtn.nextSibling);
+    } else {
+      container.insertBefore(btn, importBtn.nextSibling);
+    }
+  } else {
+    // 📌 Fallback robusto: colócalo arriba de la UL de listas, o al inicio de la sección
+    const ulListas = section.querySelector('#todasLasListas');
+    if (ulListas && ulListas.parentElement === section) {
+      section.insertBefore(btn, ulListas);
+    } else {
+      section.prepend(btn);
+    }
+  }
+
+  // Asegura layout en línea si el contenedor es un bloque
+  const parent = btn.parentElement;
+  try {
+    const cs = getComputedStyle(parent);
+    if (cs.display === 'block') {
+      parent.style.display = 'flex';
+      parent.style.flexWrap = 'wrap';
+      parent.style.gap = parent.style.gap || '8px';
+    }
+  } catch {}
+
+  return true;
+}
+
+  // Quita el botón si quedó montado fuera de #verListas
+  function removeIfOutside() {
+    const btn = document.getElementById(VALIDATE_ID);
+    if (btn && btn.dataset.scope === 'verListas') {
+      const section = document.getElementById(SECTION_ID);
+      if (!section || !section.contains(btn)) {
+        btn.remove();
+      }
+    }
+  }
+
+  // Intenta colocar al cargar
+  function init() {
+  // 🔧 Limpia cualquier botón/input que hayan creado los IIFEs viejos fuera de #verListas
+  try {
+    document.querySelectorAll('#btnValidarJSON').forEach(el => {
+      if (!document.getElementById('verListas')?.contains(el)) el.remove();
+    });
+    // si existiera un input oculto suelto, lo dejamos (es único y reutilizable),
+    // pero si quieres ser estricto:
+    // const inp = document.getElementById('inputValidarJSONHidden');
+    // if (inp && !document.body.contains(inp)) inp.remove();
+  } catch(_) {}
+
+  if (!placeInVerListas()) {
+  const mo = new MutationObserver(() => {
+    if (placeInVerListas()) mo.disconnect();
+  });
+  mo.observe(document.body, { childList: true, subtree: true });
+  // auto-desconectar después de 5s si no pudo montarse
+    setTimeout(() => mo.disconnect(), 5000);
+  }
+}
+
+  // Hook: cuando navegas entre secciones, asegura que solo viva en #verListas
+  const origMostrarSeccion = window.mostrarSeccion;
+  window.mostrarSeccion = function(id){
+    try { if (typeof origMostrarSeccion === 'function') origMostrarSeccion(id); }
+    finally {
+      if (id === SECTION_ID) {
+        placeInVerListas();
+      } else {
+        removeIfOutside();
+      }
+    }
+  };
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+})();
 
 window.agregarProducto = agregarProducto;
 window.eliminarProducto = eliminarProducto;
