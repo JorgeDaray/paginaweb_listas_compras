@@ -1975,17 +1975,35 @@ function mostrarListasDesdeCache(resetCount=false, soloPendientes=false) {
 
     const filtroLugar = normalizarTexto(document.getElementById("filtroLugarListas")?.value || "");
 
-    // 1) Base ordenada por fecha DESC
-    let listas = Array.from(listasCache.values())
-    .sort((a,b) => {
-      const ta = parseFechaFromString(a.fecha);
-      const tb = parseFechaFromString(b.fecha);
-      return (tb ? +tb : 0) - (ta ? +ta : 0);
-    });  
-    // 2) Filtro por lugar
-    listas = listas.filter(l => normalizarTexto(l.lugar || "").includes(filtroLugar));
+    // 1) Base ordenada por fecha DESC (Más recientes primero por defecto)
+    const criterioOrden = document.getElementById("ordenarListasPor")?.value || "fechaDesc";
 
-    // 3) Filtro "solo pendientes"
+    let listas = Array.from(listasCache.values());
+
+    // 2) ORDENAR LAS LISTAS (Contenedores)
+    listas.sort((a, b) => {
+      if (criterioOrden === "alphaAsc" || criterioOrden === "alphaDesc") {
+        const lugarA = (a.lugar || "").toLowerCase();
+        const lugarB = (b.lugar || "").toLowerCase();
+        const comp = lugarA.localeCompare(lugarB);
+        return criterioOrden === "alphaAsc" ? comp : -comp;
+      } else {
+        const ta = parseFechaFromString(a.fecha);
+        const tb = parseFechaFromString(b.fecha);
+        if (criterioOrden === "fechaAsc") {
+          return (ta ? +ta : 0) - (tb ? +tb : 0);
+        } else {
+          return (tb ? +tb : 0) - (ta ? +ta : 0);
+        }
+      }
+    });  
+
+    // 3) Filtro por lugar
+    if (filtroLugar) {
+      listas = listas.filter(l => normalizarTexto(l.lugar || "").includes(filtroLugar));
+    }
+
+    // 4) Filtro "solo pendientes"
     if (soloPendientes) {
       listas = listas.filter(l =>
         l.estado === "pendiente" ||
@@ -1993,18 +2011,17 @@ function mostrarListasDesdeCache(resetCount=false, soloPendientes=false) {
       );
     }
 
-    // 4) Filtro por rango de fechas (INCLUSIVO)
+    // 5) Filtro por rango de fechas
     const desdeStr = document.getElementById("fechaDesdeListas")?.value || "";
     const hastaStr = document.getElementById("fechaHastaListas")?.value || "";
     let desde = desdeStr ? parseFechaFromString(desdeStr) : null;
     let hasta = hastaStr ? parseFechaFromString(hastaStr) : null;
 
-    // Corregir si el usuario invierte el rango
     if (desde && hasta && desde > hasta) { const tmp = desde; desde = hasta; hasta = tmp; }
 
     if (desde || hasta) {
       const fromDay = desde ? startOfDay(desde) : null;
-      const toDayExclusive = hasta ? addDays(startOfDay(hasta), 1) : null; // < toDayExclusive ⇒ inclusivo
+      const toDayExclusive = hasta ? addDays(startOfDay(hasta), 1) : null;
       listas = listas.filter(l => {
         const f = parseFechaFromString(l.fecha);
         if (!f) return false;
@@ -2014,13 +2031,10 @@ function mostrarListasDesdeCache(resetCount=false, soloPendientes=false) {
       });
     }
 
-    // 5) Conteo tras filtros (antes de la paginación)
+    // 6) Conteo y Paginación
     const filteredTotal = listas.length;
-
-    // 6) Paginación
     const pageItems = listas.slice(0, listasMostradasCount);
 
-    // 7) Render
     const ul = document.getElementById("todasLasListas");
     if (!ul) return;
     ul.innerHTML = "";
@@ -2034,20 +2048,39 @@ function mostrarListasDesdeCache(resetCount=false, soloPendientes=false) {
       return;
     }
 
-    // El contador refleja las coincidencias tras TODO el filtrado
     updateListCountDisplay(filteredTotal, Array.from(listasCache.values()).length);
 
     pageItems.forEach(lista => {
-      const total = (lista.productos || []).reduce((sum,p)=>sum+(p.precio||0),0).toFixed(2);
+      // Ordenar productos de A-Z
+      const productosOrdenados = [...(lista.productos || [])].sort((a, b) => {
+        const nombreA = (a.nombre || "").toLowerCase();
+        const nombreB = (b.nombre || "").toLowerCase();
+        return nombreA.localeCompare(nombreB);
+      });
+
+      const total = productosOrdenados.reduce((sum,p)=>sum+(p.precio||0),0).toFixed(2);
 
       const pendienteFecha = lista.estado === "pendiente";
-      const pendienteProducto = Array.isArray(lista.productos) && lista.productos.some(p => p.precio === 0);
+      const pendienteProducto = productosOrdenados.some(p => p.precio === 0);
+      
+      // 👇 LOGICA DE ETIQUETAS MODIFICADA 👇
       let badge = "";
-      if (pendienteFecha) badge += '🕒 <strong style="color:#fbc02d">PENDIENTE (Fecha)</strong><br>';
+
+      // 1. Si es Evento, mostramos EVENTO (Prioridad sobre Pendiente Fecha)
+      if (lista.isEvento) {
+         badge += '🎉 <strong style="color:#8b5cf6">EVENTO</strong><br>';
+      } 
+      // 2. Si NO es evento y está pendiente por fecha
+      else if (pendienteFecha) {
+         badge += '🕒 <strong style="color:#fbc02d">PENDIENTE (Fecha)</strong><br>';
+      }
+
+      // 3. Otras etiquetas (se acumulan)
       if (pendienteProducto) badge += '⌛ <strong style="color:#fbc02d">Productos pendientes</strong><br>';
       if (lista.pagoMensual) badge += '📆 <strong style="color:#3b82f6">PAGO MENSUAL</strong><br>';
+      // 👆 FIN LOGICA ETIQUETAS 👆
 
-      const productosHTML = (lista.productos || []).map(p => {
+      const productosHTML = productosOrdenados.map(p => {
         const iconoP = p.precio === 0 ? `<i class="fa-solid fa-hourglass-half" title="Precio 0" style="color: #f59e0b;"></i>` : "";
         return `<li>${escapeHtml(p.nombre)} ${iconoP} — $${(p.precio||0).toFixed(2)}${p.descripcion ? ` — ${escapeHtml(p.descripcion)}` : ""}</li>`;
       }).join("");
@@ -2096,7 +2129,6 @@ function mostrarListasDesdeCache(resetCount=false, soloPendientes=false) {
       ul.innerHTML += `<li data-id="${lista.id}">${resumenHTML}${detalleHTML}</li>`;
     });
 
-    // 8) Botón de paginación (alternar texto y acción)
     const btnCargar = document.getElementById("btnCargarMas");
     if (btnCargar) {
       if (filteredTotal <= 5) {
@@ -2113,7 +2145,6 @@ function mostrarListasDesdeCache(resetCount=false, soloPendientes=false) {
       }
     }
 
-    // 9) Actualizar panel de notificaciones (si aplica)
     actualizarNotificaciones();
 
   } catch(e){
@@ -2330,6 +2361,7 @@ function seleccionarSugerencia(div, producto) {
 }
 
 /* ======= EDITAR (usa cache + getDoc fallback y respeta reactivar) ======= */
+/* ======= EDITAR (usa cache + getDoc fallback y respeta reactivar) ======= */
 async function editarLista(id) {
   try {
     let lista = listasCache.get(id);
@@ -2348,13 +2380,14 @@ async function editarLista(id) {
     fechaInputEl.value = lista.fecha ? formatDateToInput(parseFechaFromString(lista.fecha)) : "";
     if (document.getElementById("esPagoMensual")) document.getElementById("esPagoMensual").checked = !!lista.pagoMensual;
     if (document.getElementById("esEvento")) document.getElementById("esEvento").checked = !!lista.isEvento;
+    
     // Normaliza estado por si el doc traía ambos en true
     const pagEl = document.getElementById("esPagoMensual");
     const evEl  = document.getElementById("esEvento");
     if (pagEl && evEl && pagEl.checked && evEl.checked) {
-      // Regla: prioriza "Evento" (ajústala si prefieres)
       pagEl.checked = false;
     }
+    
     document.getElementById("idListaEditando").value = id;
     document.getElementById("tituloFormulario").textContent = "Editar Lista de Compras";
     const form = document.getElementById('formLista');
@@ -2379,7 +2412,15 @@ async function editarLista(id) {
 
     const contenedor = document.getElementById("productos");
     contenedor.innerHTML = "";
-    (lista.productos || []).forEach(p => {
+
+    // 👇 NUEVO: Ordenar los productos alfabéticamente antes de mostrarlos en el editor
+    const productosOrdenados = [...(lista.productos || [])].sort((a, b) => {
+        const nombreA = (a.nombre || "").toLowerCase();
+        const nombreB = (b.nombre || "").toLowerCase();
+        return nombreA.localeCompare(nombreB);
+    });
+
+    productosOrdenados.forEach(p => {
       const div = document.createElement("div");
       div.className = "producto";
       div.innerHTML = `
@@ -2705,27 +2746,29 @@ window.addEventListener("offline", () => mostrarMensaje("Sin conexión. Las acci
 const debouncedMostrarListas = debounced(() => mostrarListasFirebase(true), 250);
 
 /* ======= INICIALIZAR: onSnapshot listener para mantener cache en tiempo real (y carga inicial desde IndexedDB) ======= */
+/* ======= OPTIMIZACIÓN: Listener Inteligente ======= */
 let listasListenerUnsubscribe = null;
 
 async function startListasListener() {
   if (!canUseFirestore() || typeof collection !== 'function' || typeof onSnapshot !== 'function') {
-    console.warn("startListasListener: Firestore o funciones no disponibles, listener no inicializado.");
     return;
   }
 
-  // Si ya existía, desuscribir
-  if (typeof listasListenerUnsubscribe === 'function') {
-    try { listasListenerUnsubscribe(); } catch(e) {}
-    listasListenerUnsubscribe = null;
-  }
+  // Si ya hay uno escuchando, no creamos otro
+  if (listasListenerUnsubscribe) return;
 
   try {
-    const colRef = collection(db, "listas");
+    // OPTIMIZACIÓN: Ordenar por fecha desciende ayuda al indexado interno
+    // NOTA: Si en el futuro quieres ahorrar más lecturas, puedes agregar limit(100) aquí,
+    // pero eso ocultaría las listas muy antiguas en el buscador.
+    const q = query(collection(db, "listas"), orderBy("fecha", "desc"));
+
     listasListenerUnsubscribe = onSnapshot(
-      colRef,
+      q,
       (snapshot) => {
         let touched = false;
-
+        
+        // Solo procesamos si hay cambios reales desde el servidor o local
         snapshot.docChanges().forEach((change) => {
           const id = change.doc.id;
           const data = { id, ...change.doc.data() };
@@ -2738,48 +2781,54 @@ async function startListasListener() {
               touched = true;
             }
           } else {
-            // Opcional: ignora escrituras locales aún no confirmadas por el servidor.
-            // if (change.doc.metadata?.hasPendingWrites) return;
-
-            listasCache.set(id, data);
-            saveOneToIndexedDB(data).catch(()=>{});
-            touched = true;
+            // OPTIMIZACIÓN: Comparación profunda antes de escribir en caché/IDB
+            // para evitar ciclos de renderizado innecesarios
+            const current = listasCache.get(id);
+            if (!current || shallowChanged(current, data)) {
+               listasCache.set(id, data);
+               saveOneToIndexedDB(data).catch(()=>{});
+               touched = true;
+            }
           }
         });
 
-        if (!touched) return;
+        if (!touched && snapshot.size === listasCache.size) return;
 
-        // Persistimos y actualizamos con throttle/debounce
         schedulePersistCacheToIndexedDB().catch(()=>{});
         debouncedActualizarNotificaciones();
         debouncedMostrarListas();
       },
-      async (err) => {
-        console.error("onSnapshot listas error:", err);
-        mostrarMensaje("Error al conectar con Firestore; usando datos en caché.", "offline");
-
-        try {
-          await loadCacheFromIndexedDB();
-          debouncedActualizarNotificaciones();
-          debouncedMostrarListas();
-        } catch (e) {
-          console.error("Carga cache tras onSnapshot error fallida:", e);
-        }
-
-        try { if (typeof listasListenerUnsubscribe === 'function') listasListenerUnsubscribe(); } catch(e){}
+      (err) => {
+        console.error("onSnapshot error:", err);
+        // Si falla (ej. permisos o desconexión), limpiamos la variable
         listasListenerUnsubscribe = null;
       }
     );
+    console.log("📡 Conexión a Firebase: ACTIVADA");
   } catch (e) {
-    console.error("startListasListener fallo:", e);
-    mostrarMensaje("No se pudo iniciar la sincronización en tiempo real. Se usarán datos locales.", "offline");
-
-    try { await loadCacheFromIndexedDB(); } catch (err) { console.error(err); }
-
-    debouncedActualizarNotificaciones();
-    debouncedMostrarListas();
+    console.error("Error iniciando listener:", e);
   }
 }
+
+function stopListasListener() {
+  if (typeof listasListenerUnsubscribe === 'function') {
+    listasListenerUnsubscribe();
+    listasListenerUnsubscribe = null;
+    console.log("zzz Conexión a Firebase: PAUSADA (Ahorro de lecturas)");
+  }
+}
+
+// 🚀 AHORRO MASIVO: Desconectar Firebase cuando la pestaña no se ve
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) {
+    stopListasListener();
+  } else {
+    // Al volver, reconectamos para traer novedades
+    startListasListener();
+    // Forzamos un render rápido con lo que haya en caché visualmente
+    mostrarListasFirebase(); 
+  }
+});
 
 /* ======= UX/validación para inputs .producto-precio ======= */
 (function wirePrecioInputs() {
