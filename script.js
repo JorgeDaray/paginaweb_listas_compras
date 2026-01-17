@@ -1969,18 +1969,18 @@ function guardarCambiosOffline(idLista, datosLista) {
 let listasMostradasCount = 5;
 
 // Reemplaza COMPLETA tu función por esta versión:
-function mostrarListasDesdeCache(resetCount=false, soloPendientes=false) {
+/* ======= INTERFAZ: mostrarListas con diseño flotante y filtros ======= */
+function mostrarListasDesdeCache(resetCount = false, soloPendientes = false) {
   try {
     if (resetCount) listasMostradasCount = 5;
 
+    // 1) Obtener valores de filtros
     const filtroLugar = normalizarTexto(document.getElementById("filtroLugarListas")?.value || "");
-
-    // 1) Base ordenada por fecha DESC (Más recientes primero por defecto)
     const criterioOrden = document.getElementById("ordenarListasPor")?.value || "fechaDesc";
 
+    // 2) Convertir mapa a Array y ORDENAR LISTAS
     let listas = Array.from(listasCache.values());
 
-    // 2) ORDENAR LAS LISTAS (Contenedores)
     listas.sort((a, b) => {
       if (criterioOrden === "alphaAsc" || criterioOrden === "alphaDesc") {
         const lugarA = (a.lugar || "").toLowerCase();
@@ -1990,15 +1990,13 @@ function mostrarListasDesdeCache(resetCount=false, soloPendientes=false) {
       } else {
         const ta = parseFechaFromString(a.fecha);
         const tb = parseFechaFromString(b.fecha);
-        if (criterioOrden === "fechaAsc") {
-          return (ta ? +ta : 0) - (tb ? +tb : 0);
-        } else {
-          return (tb ? +tb : 0) - (ta ? +ta : 0);
-        }
+        // "fechaAsc" = antiguas primero, "fechaDesc" = nuevas primero
+        if (criterioOrden === "fechaAsc") return (ta ? +ta : 0) - (tb ? +tb : 0);
+        else return (tb ? +tb : 0) - (ta ? +ta : 0);
       }
-    });  
+    });
 
-    // 3) Filtro por lugar
+    // 3) Filtro por texto (Lugar)
     if (filtroLugar) {
       listas = listas.filter(l => normalizarTexto(l.lugar || "").includes(filtroLugar));
     }
@@ -2011,7 +2009,7 @@ function mostrarListasDesdeCache(resetCount=false, soloPendientes=false) {
       );
     }
 
-    // 5) Filtro por rango de fechas
+    // 5) Filtro por rango de fechas (CALENDARIO)
     const desdeStr = document.getElementById("fechaDesdeListas")?.value || "";
     const hastaStr = document.getElementById("fechaHastaListas")?.value || "";
     let desde = desdeStr ? parseFechaFromString(desdeStr) : null;
@@ -2051,65 +2049,81 @@ function mostrarListasDesdeCache(resetCount=false, soloPendientes=false) {
     updateListCountDisplay(filteredTotal, Array.from(listasCache.values()).length);
 
     pageItems.forEach(lista => {
-      // Ordenar productos de A-Z
+      // Ordenar productos internos de A-Z
       const productosOrdenados = [...(lista.productos || [])].sort((a, b) => {
         const nombreA = (a.nombre || "").toLowerCase();
         const nombreB = (b.nombre || "").toLowerCase();
         return nombreA.localeCompare(nombreB);
       });
 
-      const total = productosOrdenados.reduce((sum,p)=>sum+(p.precio||0),0).toFixed(2);
+      const total = productosOrdenados.reduce((sum, p) => sum + (p.precio || 0), 0).toFixed(2);
 
       const pendienteFecha = lista.estado === "pendiente";
       const pendienteProducto = productosOrdenados.some(p => p.precio === 0);
       
-      // 👇 LOGICA DE ETIQUETAS MODIFICADA 👇
+      // Etiquetas (Badges)
       let badge = "";
-
-      // 1. Si es Evento, mostramos EVENTO (Prioridad sobre Pendiente Fecha)
       if (lista.isEvento) {
-         badge += '🎉 <strong style="color:#8b5cf6">EVENTO</strong><br>';
-      } 
-      // 2. Si NO es evento y está pendiente por fecha
-      else if (pendienteFecha) {
-         badge += '🕒 <strong style="color:#fbc02d">PENDIENTE (Fecha)</strong><br>';
+         badge += '<span style="color:#8b5cf6; font-weight:700;">🎉 EVENTO</span> ';
+      } else if (pendienteFecha) {
+         badge += '<span style="color:#fbc02d; font-weight:700;">🕒 PENDIENTE</span> ';
       }
+      if (pendienteProducto) badge += '<span style="color:#f59e0b; font-weight:600; font-size:0.9em;">(Productos sin precio)</span> ';
+      if (lista.pagoMensual) badge += '<br><span style="color:#3b82f6; font-weight:600; font-size:0.9em;">📆 MENSUAL</span>';
 
-      // 3. Otras etiquetas (se acumulan)
-      if (pendienteProducto) badge += '⌛ <strong style="color:#fbc02d">Productos pendientes</strong><br>';
-      if (lista.pagoMensual) badge += '📆 <strong style="color:#3b82f6">PAGO MENSUAL</strong><br>';
-      // 👆 FIN LOGICA ETIQUETAS 👆
-
-      const productosHTML = productosOrdenados.map(p => {
-        const iconoP = p.precio === 0 ? `<i class="fa-solid fa-hourglass-half" title="Precio 0" style="color: #f59e0b;"></i>` : "";
-        return `<li>${escapeHtml(p.nombre)} ${iconoP} — $${(p.precio||0).toFixed(2)}${p.descripcion ? ` — ${escapeHtml(p.descripcion)}` : ""}</li>`;
-      }).join("");
-
+      // HTML de botones
       const calendarBtnHTML =
         `<a class="btn btn--primary btn-google-calendar"
             href="${crearGoogleCalendarLink(lista, { allDay: false, hour: NOTIFY_HOUR || 9, durationMinutes: 60 })}"
             target="_blank" rel="noopener noreferrer">
-            <i class="fa-solid fa-calendar-plus" aria-hidden="true"></i> Añadir a Google Calendar
+            <i class="fa-solid fa-calendar-plus" aria-hidden="true"></i> Calendar
         </a>`;
 
       const icsBtnHTML =
         `<button type="button"
                 class="btn btn--secondary btn-download-ics"
                 data-lista-id="${escapeHtml(lista.id)}">
-            <i class="fa-solid fa-file-arrow-down" aria-hidden="true"></i> Descargar .ics
+            <i class="fa-solid fa-file-arrow-down" aria-hidden="true"></i> .ics
         </button>`;
 
+      // HTML del Resumen (DISEÑO FLOTANTE RECUPERADO)
+      // Usamos flexbox con justify-content: space-between para separar Lugar/Fecha del Precio
       const resumenHTML = `
         <div class="lista-item resumen"
              onclick="alternarDetalle(this)"
              tabindex="0" role="button"
              aria-expanded="false"
              onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();alternarDetalle(this);}">
-          📅 <strong>${formatearFecha(lista.fecha)}</strong> — 🏪 <em>${escapeHtml(lista.lugar)}</em> — 💰 $${total}
-          <div class="badge-pendiente">${badge}</div>
+          
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; width:100%;">
+            <div style="flex:1; padding-right:10px;">
+               <div style="font-size:1.1em; font-weight:bold; color:#111827; line-height:1.2;">
+                 ${escapeHtml(lista.lugar)}
+               </div>
+               <div style="color:#6b7280; font-size:0.85em; margin-top:4px;">
+                 📅 ${formatearFecha(lista.fecha)}
+               </div>
+            </div>
+
+            <div style="text-align:right; white-space:nowrap;">
+               <div style="font-size:1.1em; font-weight:bold; color:#059669;">
+                 $${total}
+               </div>
+            </div>
+          </div>
+
+          <div style="margin-top:6px; font-size:0.85em; line-height:1.4;">
+            ${badge}
+          </div>
         </div>`;
 
-        const detalleHTML = `
+      // HTML del Detalle (Productos ordenados)
+      const productosHTML = productosOrdenados.map(p => {
+        const iconoP = p.precio === 0 ? `<i class="fa-solid fa-hourglass-half" title="Precio 0" style="color: #f59e0b;"></i>` : "";
+        return `<li>${escapeHtml(p.nombre)} ${iconoP} — $${(p.precio || 0).toFixed(2)}${p.descripcion ? ` <span style="color:#6b7280;font-size:0.9em">(${escapeHtml(p.descripcion)})</span>` : ""}</li>`;
+      }).join("");
+
+      const detalleHTML = `
         <div class="detalle-lista oculto">
           <div class="acciones-lista acciones-grid-2x2">
             ${calendarBtnHTML}
@@ -2121,14 +2135,15 @@ function mostrarListasDesdeCache(resetCount=false, soloPendientes=false) {
               <i class="fa-solid fa-trash" aria-hidden="true"></i> Eliminar
             </button>
           </div>
-          <ul class="productos-detalle">
+          <ul class="productos-detalle" style="margin-top:12px; border-top:1px solid #eee; padding-top:8px;">
             ${productosHTML}
           </ul>
-        </div>`;      
+        </div>`;
 
-      ul.innerHTML += `<li data-id="${lista.id}">${resumenHTML}${detalleHTML}</li>`;
+      ul.innerHTML += `<li data-id="${lista.id}" style="margin-bottom:10px;">${resumenHTML}${detalleHTML}</li>`;
     });
 
+    // Botón Cargar Más
     const btnCargar = document.getElementById("btnCargarMas");
     if (btnCargar) {
       if (filteredTotal <= 5) {
@@ -2144,11 +2159,10 @@ function mostrarListasDesdeCache(resetCount=false, soloPendientes=false) {
         }
       }
     }
-
     actualizarNotificaciones();
 
-  } catch(e){
-    mostrarMensaje("Error cargando listas: " + (e.message || e), "error");
+  } catch (e) {
+    mostrarMensaje("Error cargando listas: " + e.message, "error");
     console.error(e);
   }
 }
