@@ -1,0 +1,2520 @@
+[
+  {
+    "id": "1Q0wMLMSGCTACnbGMOV6",
+    "completada": true,
+    "lugar": "Tienda fea esquina",
+    "pagoMensual": false,
+    "isEvento": false,
+    "fecha": "2025-09-07",
+    "productos": [
+      {
+        "precio": 29,
+        "descripcion": "Leche roja",
+        "nombre": "Leche lala 2l"
+      },
+      {
+        "descripcion": "1/2 son 6 huevos",
+        "nombre": "Huevo",
+        "precio": 35
+      },
+      {
+        "descripcion": "15 tortillas",
+        "nombre": "Tortillas de harina",
+        "precio": 35
+      },
+      {
+        "nombre": "Plátanos",
+        "descripcion": "2",
+        "precio": 7
+      }
+    ],
+    "_notificacionDescartada": false,
+    "createdAt": {
+      "type": "firestore/timestamp/1.0",
+      "seconds": 1757281627,
+      "nanoseconds": 1000000
+    },
+    "estado": "expirada"
+  },
+  {
+    "id": "1uqoVuWBhK7mL9cOTvST",
+    "estado": "pendiente",
+    "fecha": "2026-03-13",
+    "isEvento": false,
+    "lugar": "Casa",
+    "createdAt": {
+      "type": "firestore/timestamp/1.0",
+      "seconds": 1760914244,
+      "nanoseconds": 333000000
+    },
+    "pagoMensual": true,
+    "productos": [
+      {
+        "precio": 1200,
+        "descripcion": "Pagar a abuelito",
+        "nombre": "Renta"
+      }
+    ],
+    "_notificacionDescartada": false,
+    "completada": false
+  },
+  {
+    "id": "3dMDoNwZB2p4hrPQ34zD",
+    "productos": [
+      {
+        "descripcion": "118 el kilo",
+        "precio": 86,
+        "nombre": "Molida de res 3/4"
+      },
+      {
+        "nombre": "Jitomate",
+        "precio": 22,
+        "descripcion": "22 el kilo"
+      }
+    ],
+    "fecha": "2025-08-11",
+    "pagoMensual": false,
+    "_notificacionDescartada": true,
+    "estado": "expirada",
+    "createdAt": {
+      "type": "firestore/timestamp/1.0",
+      "seconds": 1754935020,
+      "nanoseconds": 214000000
+    },
+    "lugar": "Super carnes",
+    "completada": true
+  },
+  {
+    "id": "41FUMlMyhZ68ir4O7i65",
+    "estado": "expirada",
+    "productos": [
+      {
+        "precio": 140,
+        "descripcion": "Entrada por banco casi kilo",
+        "nombre": "Pechuga pollo"
+      },
+      {
+        "descripcion": "3 pares largos",
+        "precio": 120,
+        "nombre": "Calcetines"
+      },
+      {
+        "descripcion": "De 2da",
+        "nombre": "Ropa",
+        "precio": 150
+      },
+      {
+        "precio": 35,
+        "descripcion": "1 kg",
+        "nombre": "Aguacate"
+      },
+      {
+        "nombre": "Melón y sandía",
+        "descripcion": "2x35",
+        "precio": 35
+      },
+      {
+        "nombre": "Bolsa de basura",
+        "descripcion": "4 de agarradera",
+        "precio": 10
+      },
+      {
+        "descripcion": "30c/u",
+        "precio": 60,
+        "nombre": "Agua de raíz"
+      }
+    ],
+    "_notificacionDescartada": true,
+    "createdAt": {
+      "type": "firestore/timestamp/1.0",
+      "seconds": 1756657925,
+      "nanoseconds": 62000000
+    },
+    "fecha": "2025-08-31",
+    "completada": true,
+    "lugar": "Tianguis domingo SP",
+    "pagoMensual": false,
+    "isEvento": false
+  },
+  {
+    "id": "5Z14oXsBcn9JpXR11ge6",
+    "lugar": "Busuu",
+    "fecha": "2025-12-08",
+    "pagoMensual": false,
+    "isEvento": false,
+    "createdAt": {
+      "type": "firestore/timestamp/1.0",
+      "seconds": 1757295389,
+      "nanoseconds": 193000000
+    },
+    "estado": "expirada",
+    "productos": [
+      {
+        "descripcion": "Revisar antes precio",
+        "precio": 250,
+        "nombre": "Premium anual"
+      }
+    ],
+    "createdAtClient": "2025-09-08T01:36:27.592Z",
+    "_notificacionDescartada": true
+  },
+  {
+    "id": "5qv4fB5duYiiUbGKh33T",
+    "createdAtClient": "2026-01-08T23:48:58.567Z",
+    "createdAt": {
+      "type": "firestore/timestamp/1.0",
+      "seconds": 1767916140,
+      "nanoseconds": 976000000
+    },
+    "fecha": "2026-01-08",
+    "productos": [
+      {
+        "precio": 66,
+        "descripcion": "22 c/u",
+        "nombre": "Atún dolores Agua"
+      },
+      {
+        "precio": 16,
+        "nombre": "Lata elote",
+        "descripcion": "La costeña 220g"
+      },
+      {
+        "nombre": "Saladitas normales",
+        "precio": 22,
+        "descripcion": ""
+      },
+      {
+        "nombre": "Mayonesa McCormick",
+        "precio": 34,
+        "descripcion": "390 gr"
+      },
+      {
+        "nombre": "Leche 1L",
+        "precio": 28,
+        "descripcion": "Muy buena"
+      }
+    ],
+    "pagoMensual": false,
+    "lugar": "Tienda señora carera",
+    "completada": true,
+    "_notificacionDescartada": false,
+    "estado": "expirada",
+    "isEvento": false
+  },
+  {
+    "id": "7VKpzD56X2lv9YljsYo5",
+    "productos": [
+      {
+        "nombre": "Ensure 237ml vainilla",
+        "precio": 63,
+        "descripcion": "91 normal"
+      },
+      {
+        "nombre": "Ensure 237ml chocolate",
+        "precio": 63,
+        "descripcion": "91 normal"
+      },
+      {
+        "nombre": "Leche Nan Optimal pro 0-6 mes",
+        "descripcion": "427 normal",
+        "precio": 356
+      }
+    ],
+    "fecha": "2025-08-04",
+    "_notificacionDescartada": false,
+    "createdAt": {
+      "type": "firestore/timestamp/1.0",
+      "seconds": 1754934771,
+      "nanoseconds": 76000000
+    },
+    "estado": "expirada",
+    "lugar": "Farmacias Guadalajara",
+    "pagoMensual": false,
+    "completada": true
+  },
+  {
+    "id": "8nR73a3UcGFWt2l6Nyzo",
+    "createdAt": {
+      "type": "firestore/timestamp/1.0",
+      "seconds": 1761493366,
+      "nanoseconds": 512000000
+    },
+    "isEvento": false,
+    "lugar": "Bodega SP",
+    "_notificacionDescartada": false,
+    "estado": "expirada",
+    "pagoMensual": false,
+    "productos": [
+      {
+        "descripcion": "23 c/u llevamos 4",
+        "nombre": "Boing",
+        "precio": 62
+      },
+      {
+        "precio": 37,
+        "descripcion": "Macornick",
+        "nombre": "Mermelada fresa"
+      },
+      {
+        "nombre": "Frutsi",
+        "precio": 28,
+        "descripcion": "Pack 6"
+      },
+      {
+        "nombre": "Knor suiza",
+        "descripcion": "20 c/u",
+        "precio": 40
+      },
+      {
+        "nombre": "Maruchan",
+        "precio": 18,
+        "descripcion": "9 c/u de bolsa"
+      },
+      {
+        "precio": 18,
+        "nombre": "Arroz",
+        "descripcion": "Marca Aurrera"
+      },
+      {
+        "nombre": "Pan bimbo",
+        "precio": 47,
+        "descripcion": "Grande"
+      },
+      {
+        "nombre": "$20",
+        "precio": 44,
+        "descripcion": "Clásicos"
+      },
+      {
+        "precio": 23,
+        "nombre": "Cachitos",
+        "descripcion": ""
+      }
+    ],
+    "fecha": "2025-10-26",
+    "completada": true
+  },
+  {
+    "id": "8zGXo9Hrq7TCWbJQ11lL",
+    "completada": true,
+    "pagoMensual": false,
+    "fecha": "2025-09-07",
+    "estado": "expirada",
+    "productos": [
+      {
+        "nombre": "Jitomate",
+        "descripcion": "1kilo",
+        "precio": 15
+      },
+      {
+        "precio": 10,
+        "descripcion": "La bolsita",
+        "nombre": "Cebolla"
+      },
+      {
+        "nombre": "Vestido mexicano",
+        "precio": 80,
+        "descripcion": "Nuevo"
+      },
+      {
+        "nombre": "Suéter nana",
+        "precio": 25,
+        "descripcion": "Execelente"
+      },
+      {
+        "descripcion": "80 c/u",
+        "precio": 240,
+        "nombre": "Sacos formales"
+      },
+      {
+        "descripcion": "Promo 4+1",
+        "precio": 162,
+        "nombre": "Tacos y hamburguesas"
+      },
+      {
+        "descripcion": "La bolsa",
+        "nombre": "Papa",
+        "precio": 10
+      },
+      {
+        "nombre": "Plantillas",
+        "descripcion": "50 c/u",
+        "precio": 100
+      },
+      {
+        "precio": 40,
+        "nombre": "Figura inosuke",
+        "descripcion": "Bonita"
+      },
+      {
+        "precio": 50,
+        "descripcion": "Falta empaque",
+        "nombre": "Carcasa contra agua"
+      }
+    ],
+    "createdAt": {
+      "type": "firestore/timestamp/1.0",
+      "seconds": 1757208205,
+      "nanoseconds": 87000000
+    },
+    "lugar": "Tianguis domingo SP",
+    "isEvento": false,
+    "_notificacionDescartada": false
+  },
+  {
+    "id": "9036NDjpnKwjBgyljBK7",
+    "productos": [
+      {
+        "descripcion": "",
+        "precio": 2300,
+        "nombre": "Tarjeta bbva"
+      }
+    ],
+    "estado": "expirada",
+    "createdAt": {
+      "type": "firestore/timestamp/1.0",
+      "seconds": 1761001857,
+      "nanoseconds": 651000000
+    },
+    "pagoMensual": false,
+    "_notificacionDescartada": false,
+    "fecha": "2025-11-20",
+    "lugar": "Bbva",
+    "isEvento": false
+  },
+  {
+    "id": "9mGzQKtwctHI7ab10gGw",
+    "fecha": "2025-10-11",
+    "pagoMensual": false,
+    "isEvento": true,
+    "completada": true,
+    "lugar": "Salón Bella Stanza",
+    "estado": "caducado",
+    "createdAt": {
+      "type": "firestore/timestamp/1.0",
+      "seconds": 1759173548,
+      "nanoseconds": 191000000
+    },
+    "productos": [
+      {
+        "nombre": "Tarjeta de regalo Liverpool",
+        "precio": 500,
+        "descripcion": "Regalo"
+      }
+    ],
+    "createdAtClient": "2025-09-29T19:19:06.067Z",
+    "_notificacionDescartada": false
+  },
+  {
+    "id": "BB7fEwtPkxAKw2lf5Ppl",
+    "completada": true,
+    "estado": "expirada",
+    "_notificacionDescartada": false,
+    "lugar": "Farmacias similares",
+    "productos": [
+      {
+        "descripcion": "Medicamento",
+        "nombre": "Clindamicina 300 mg",
+        "precio": 199
+      },
+      {
+        "descripcion": "89 c/u desparacitante",
+        "nombre": "Loxcell",
+        "precio": 178
+      }
+    ],
+    "createdAt": {
+      "type": "firestore/timestamp/1.0",
+      "seconds": 1754934449,
+      "nanoseconds": 517000000
+    },
+    "pagoMensual": false,
+    "fecha": "2025-08-03"
+  },
+  {
+    "id": "CgAvnhL5Cntt6QA3a8bl",
+    "completada": true,
+    "isEvento": false,
+    "fecha": "2025-11-11",
+    "_notificacionDescartada": false,
+    "lugar": "Falabella",
+    "productos": [
+      {
+        "precio": 150,
+        "nombre": "Tarjeta Falabella",
+        "descripcion": "Corte"
+      }
+    ],
+    "estado": "expirada",
+    "pagoMensual": false,
+    "createdAt": {
+      "type": "firestore/timestamp/1.0",
+      "seconds": 1760914362,
+      "nanoseconds": 340000000
+    }
+  },
+  {
+    "id": "CtbQSShkzS2I2nixLnCY",
+    "createdAt": {
+      "type": "firestore/timestamp/1.0",
+      "seconds": 1761962810,
+      "nanoseconds": 228000000
+    },
+    "isEvento": false,
+    "estado": "expirada",
+    "pagoMensual": false,
+    "fecha": "2025-11-22",
+    "productos": [
+      {
+        "descripcion": "Corte",
+        "nombre": "Tarjeta Nu",
+        "precio": 400
+      }
+    ],
+    "_notificacionDescartada": false,
+    "lugar": "Tarjeta nu"
+  },
+  {
+    "id": "D5ZYXpCFSwn3R74jdf6O",
+    "_notificacionDescartada": false,
+    "pagoMensual": false,
+    "estado": "expirada",
+    "isEvento": false,
+    "productos": [
+      {
+        "nombre": "Atún",
+        "precio": 42,
+        "descripcion": "Lata dolores 2 piezas"
+      },
+      {
+        "nombre": "Lata elote",
+        "descripcion": "Del monte",
+        "precio": 16
+      },
+      {
+        "precio": 16,
+        "nombre": "Mostaza",
+        "descripcion": "Chica"
+      },
+      {
+        "precio": 24,
+        "nombre": "Saladitas normales",
+        "descripcion": ""
+      },
+      {
+        "precio": 24,
+        "nombre": "Birotes",
+        "descripcion": "Tres birotes $8 c/u"
+      },
+      {
+        "descripcion": "Chicas",
+        "precio": 25,
+        "nombre": "Papas"
+      }
+    ],
+    "lugar": "Tienda señora carera",
+    "createdAt": {
+      "type": "firestore/timestamp/1.0",
+      "seconds": 1764895012,
+      "nanoseconds": 555000000
+    },
+    "fecha": "2025-12-04"
+  },
+  {
+    "id": "D9q496T1VE54L7fyWqLw",
+    "pagoMensual": false,
+    "estado": "pendiente",
+    "isEvento": true,
+    "productos": [
+      {
+        "precio": 0,
+        "descripcion": "Giselle",
+        "nombre": "Boda"
+      }
+    ],
+    "_notificacionDescartada": false,
+    "fecha": "2026-02-22",
+    "lugar": "Boda",
+    "createdAt": {
+      "type": "firestore/timestamp/1.0",
+      "seconds": 1764373802,
+      "nanoseconds": 345000000
+    }
+  },
+  {
+    "id": "ETDLeGuF1vvEWDYY07dH",
+    "productos": [
+      {
+        "nombre": "Tapete labubu",
+        "descripcion": "30 cada uno",
+        "precio": 60
+      }
+    ],
+    "completada": true,
+    "fecha": "2025-08-03",
+    "_notificacionDescartada": false,
+    "pagoMensual": false,
+    "lugar": "Tienda china SP",
+    "estado": "expirada",
+    "createdAt": {
+      "type": "firestore/timestamp/1.0",
+      "seconds": 1754934282,
+      "nanoseconds": 208000000
+    }
+  },
+  {
+    "id": "F0kVsa3wkZPRYABDKnBg",
+    "estado": "pendiente",
+    "lugar": "Google fotos",
+    "createdAt": {
+      "type": "firestore/timestamp/1.0",
+      "seconds": 1756178424,
+      "nanoseconds": 521000000
+    },
+    "completada": false,
+    "productos": [
+      {
+        "nombre": "200 gb almacén",
+        "precio": 59,
+        "descripcion": "Mensual fotos"
+      }
+    ],
+    "pagoMensual": true,
+    "isEvento": false,
+    "fecha": "2026-02-25",
+    "_notificacionDescartada": false
+  },
+  {
+    "id": "N2wgctvMW4HIRmJAaoyD",
+    "productos": [
+      {
+        "nombre": "2 TB y gemini pro Google one",
+        "descripcion": "Cancelar mensualidad",
+        "precio": 0
+      }
+    ],
+    "_notificacionDescartada": false,
+    "pagoMensual": false,
+    "lugar": "Google One",
+    "createdAtClient": "2025-09-07T01:58:50.390Z",
+    "createdAt": {
+      "type": "firestore/timestamp/1.0",
+      "seconds": 1757210331,
+      "nanoseconds": 762000000
+    },
+    "estado": "pendiente",
+    "isEvento": false,
+    "fecha": "2026-09-06"
+  },
+  {
+    "id": "N5xrMvXmIQNEuU8MKJmY",
+    "createdAt": {
+      "type": "firestore/timestamp/1.0",
+      "seconds": 1754154996,
+      "nanoseconds": 745000000
+    },
+    "_notificacionDescartada": true,
+    "fecha": "2025-07-04",
+    "lugar": "Joinet",
+    "productos": [
+      {
+        "precio": 64,
+        "descripcion": "Precio original 74",
+        "nombre": "Mouse pad"
+      },
+      {
+        "nombre": "Bascula digital elegate",
+        "descripcion": "105 original, no sirvió",
+        "precio": 92
+      },
+      {
+        "descripcion": "Set 5 globos",
+        "precio": 40,
+        "nombre": "Globos revelación de genero"
+      },
+      {
+        "descripcion": "Roja carga inalambrica",
+        "precio": 184,
+        "nombre": "Power bank moreka 1000mah"
+      },
+      {
+        "descripcion": "Carro morado para oficina",
+        "precio": 22,
+        "nombre": "Hot wells morado"
+      },
+      {
+        "descripcion": "En 3D",
+        "precio": 22,
+        "nombre": "Cono antiestres"
+      },
+      {
+        "descripcion": "2 piezas 18 c/u",
+        "nombre": "Peine de piojos 2 piezas",
+        "precio": 36
+      },
+      {
+        "precio": 65,
+        "nombre": "Lámpara solar exterior",
+        "descripcion": "Se mojó y no sirvió"
+      },
+      {
+        "nombre": "Corta uñas perrito",
+        "descripcion": "",
+        "precio": 28
+      },
+      {
+        "nombre": "Delantal barbero",
+        "precio": 21,
+        "descripcion": "Sirve"
+      },
+      {
+        "nombre": "Linterna buytiti",
+        "precio": 69,
+        "descripcion": "Solo linterna recargable"
+      },
+      {
+        "nombre": "Cable usb hembra macho",
+        "precio": 72,
+        "descripcion": "24 c/u 2 metros"
+      },
+      {
+        "nombre": "Listones para hacer moños",
+        "precio": 4,
+        "descripcion": "Bonitos"
+      },
+      {
+        "descripcion": "Café oscuro",
+        "nombre": "Labial retractil",
+        "precio": 12
+      },
+      {
+        "nombre": "Letrero revelación de genero",
+        "descripcion": "8 pcs",
+        "precio": 12
+      },
+      {
+        "descripcion": "",
+        "nombre": "Set globos revelación de genero",
+        "precio": 38
+      }
+    ],
+    "estado": "expirada"
+  },
+  {
+    "id": "NvItoGRyEahNNCyuZHdF",
+    "fecha": "2025-07-14",
+    "estado": "expirada",
+    "createdAt": {
+      "type": "firestore/timestamp/1.0",
+      "seconds": 1756011383,
+      "nanoseconds": 327000000
+    },
+    "productos": [
+      {
+        "nombre": "Tina",
+        "precio": 229,
+        "descripcion": "Grande y bonita"
+      },
+      {
+        "descripcion": "19 herm 3 lit",
+        "precio": 48,
+        "nombre": "Leche"
+      },
+      {
+        "descripcion": "",
+        "nombre": "Salchicha de pavo",
+        "precio": 55
+      },
+      {
+        "descripcion": "",
+        "nombre": "Sopa fideo",
+        "precio": 9
+      },
+      {
+        "nombre": "Pure de tomate",
+        "descripcion": "2 X 17",
+        "precio": 17
+      },
+      {
+        "descripcion": "Mediano",
+        "precio": 46,
+        "nombre": "Mole maría"
+      },
+      {
+        "precio": 113,
+        "nombre": "Chilorio",
+        "descripcion": "2 X 113"
+      },
+      {
+        "precio": 15,
+        "nombre": "Maruchan birria",
+        "descripcion": ""
+      },
+      {
+        "precio": 35,
+        "descripcion": "Paquete de 3",
+        "nombre": "Galletas marías"
+      },
+      {
+        "descripcion": "2 X 99 trix y miel",
+        "nombre": "Cereal",
+        "precio": 99
+      },
+      {
+        "descripcion": "3 X 25 bolsita",
+        "nombre": "Maruchan",
+        "precio": 25
+      },
+      {
+        "descripcion": "2 X 35",
+        "nombre": "Frijoles",
+        "precio": 35
+      },
+      {
+        "precio": 29,
+        "nombre": "Poet 1l",
+        "descripcion": ""
+      },
+      {
+        "nombre": "Aceita canoli",
+        "descripcion": "",
+        "precio": 35
+      },
+      {
+        "descripcion": "220 grm",
+        "precio": 41,
+        "nombre": "Atún lata doble dolores"
+      },
+      {
+        "descripcion": "Papas",
+        "precio": 10,
+        "nombre": "Tostitos"
+      },
+      {
+        "precio": 20,
+        "descripcion": "3",
+        "nombre": "Tang horchata"
+      },
+      {
+        "descripcion": "",
+        "precio": 35,
+        "nombre": "Chocolatinas"
+      },
+      {
+        "nombre": "Galletas oreo",
+        "descripcion": "2 X 55",
+        "precio": 55
+      },
+      {
+        "nombre": "Valle jugo",
+        "precio": 37,
+        "descripcion": "2 jugos"
+      },
+      {
+        "descripcion": "2 X 30",
+        "precio": 30,
+        "nombre": "Lechera"
+      },
+      {
+        "nombre": "Leche lala 1.5l",
+        "descripcion": "42 c/u",
+        "precio": 84
+      },
+      {
+        "descripcion": "",
+        "precio": 39,
+        "nombre": "Caja de pan"
+      },
+      {
+        "descripcion": "4 X 25",
+        "precio": 25,
+        "nombre": "Jugo valle mini"
+      },
+      {
+        "nombre": "Pétalo rendimax",
+        "descripcion": "",
+        "precio": 155
+      },
+      {
+        "precio": 15,
+        "nombre": "Chocolate ibarra",
+        "descripcion": "Rueda de chocolate"
+      },
+      {
+        "precio": 24,
+        "nombre": "Saladitas normales",
+        "descripcion": ""
+      },
+      {
+        "descripcion": "2 X 30 la costeña",
+        "nombre": "Lata elote",
+        "precio": 30
+      },
+      {
+        "nombre": "Yogurt lala",
+        "descripcion": "",
+        "precio": 34
+      },
+      {
+        "descripcion": "2 piezas",
+        "precio": 40,
+        "nombre": "Chocolate abuelita"
+      },
+      {
+        "descripcion": "",
+        "precio": 69,
+        "nombre": "Pan hamburguesa parrilada"
+      },
+      {
+        "nombre": "Pan tacos",
+        "precio": 14,
+        "descripcion": "7 cu"
+      },
+      {
+        "descripcion": "Una sola",
+        "nombre": "Pasta",
+        "precio": 6
+      },
+      {
+        "precio": 25,
+        "descripcion": "3 X 25",
+        "nombre": "Pasta de caracol"
+      },
+      {
+        "descripcion": "3 X 25",
+        "nombre": "Fideo",
+        "precio": 25
+      },
+      {
+        "nombre": "Cruasántin",
+        "descripcion": "2 piezas",
+        "precio": 40
+      },
+      {
+        "nombre": "Gelatina",
+        "precio": 14,
+        "descripcion": "D Gary rompope"
+      },
+      {
+        "descripcion": "",
+        "precio": 38,
+        "nombre": "Yakult"
+      },
+      {
+        "descripcion": "",
+        "nombre": "Flan D Gary",
+        "precio": 15
+      }
+    ],
+    "isEvento": false,
+    "pagoMensual": false,
+    "_notificacionDescartada": false,
+    "lugar": "Bodega Aurrera"
+  },
+  {
+    "id": "RxjphcTyUkWvMWqDHOaJ",
+    "createdAt": {
+      "type": "firestore/timestamp/1.0",
+      "seconds": 1757534929,
+      "nanoseconds": 303000000
+    },
+    "lugar": "Selva magica",
+    "completada": true,
+    "estado": "expirada",
+    "fecha": "2025-09-10",
+    "productos": [
+      {
+        "precio": 200,
+        "descripcion": "100 C/U promo sidral",
+        "nombre": "Entradas"
+      },
+      {
+        "descripcion": "Combo Hamburguesa, salchipulpos y agua",
+        "precio": 285,
+        "nombre": "Comida"
+      }
+    ],
+    "_notificacionDescartada": false,
+    "isEvento": false,
+    "createdAtClient": "2025-09-10T20:08:47.744Z",
+    "pagoMensual": false
+  },
+  {
+    "id": "UIN9hnvToePT30agne1s",
+    "_notificacionDescartada": false,
+    "pagoMensual": false,
+    "lugar": "Uber one",
+    "estado": "expirada",
+    "createdAt": {
+      "type": "firestore/timestamp/1.0",
+      "seconds": 1761915497,
+      "nanoseconds": 290000000
+    },
+    "productos": [
+      {
+        "nombre": "Membresía Uber one",
+        "precio": 70,
+        "descripcion": "Cancelar antes"
+      }
+    ],
+    "isEvento": false,
+    "fecha": "2025-12-19",
+    "createdAtClient": "2025-10-31T12:58:15.992Z"
+  },
+  {
+    "id": "UapIR3P2nbqv008kcSRi",
+    "fecha": "2025-08-26",
+    "createdAt": {
+      "type": "firestore/timestamp/1.0",
+      "seconds": 1755874282,
+      "nanoseconds": 980000000
+    },
+    "productos": [
+      {
+        "nombre": "Donar plaquetas",
+        "descripcion": "Dylan donar.",
+        "precio": 0
+      }
+    ],
+    "completada": true,
+    "pagoMensual": false,
+    "estado": "caducado",
+    "_notificacionDescartada": true,
+    "lugar": "IMSS CMN Occidental Banco de Sangre",
+    "isEvento": true
+  },
+  {
+    "id": "VXxNfU5iB9rktLp6Qi2g",
+    "fecha": "2026-01-17",
+    "createdAt": {
+      "type": "firestore/timestamp/1.0",
+      "seconds": 1768682648,
+      "nanoseconds": 510000000
+    },
+    "estado": "expirada",
+    "createdAtClient": "2026-01-17T20:44:06.624Z",
+    "completada": true,
+    "lugar": "Soriana",
+    "_notificacionDescartada": false,
+    "isEvento": false,
+    "pagoMensual": false,
+    "productos": [
+      {
+        "descripcion": "946 ml",
+        "nombre": "Aceite canoli",
+        "precio": 35.5
+      },
+      {
+        "precio": 30,
+        "nombre": "avena valley foods",
+        "descripcion": "1 kg."
+      },
+      {
+        "precio": 30,
+        "nombre": "Cereal frutas preciocisimo",
+        "descripcion": "400 gr chafa"
+      },
+      {
+        "descripcion": "400 gr",
+        "nombre": "Elote en grano valley foods",
+        "precio": 13.9
+      },
+      {
+        "nombre": "fibra scoth brite",
+        "descripcion": "esponja recubierta.",
+        "precio": 17
+      },
+      {
+        "nombre": "galleta mexicana",
+        "precio": 10.5,
+        "descripcion": "135 gr 1 paquete"
+      },
+      {
+        "nombre": "Gel xtreme",
+        "descripcion": "500 gr",
+        "precio": 35.9
+      },
+      {
+        "descripcion": "215 ml",
+        "precio": 10.9,
+        "nombre": "mini salvo"
+      },
+      {
+        "nombre": "Leche 19 hermanos",
+        "precio": 44.9,
+        "descripcion": "paquete 3 litros"
+      },
+      {
+        "descripcion": "8.30 cada una",
+        "nombre": "Lecha santa clara mini",
+        "precio": 41.5
+      },
+      {
+        "nombre": "Margarina delicia",
+        "precio": 20,
+        "descripcion": "10 C/U 1 | 90 gramos"
+      },
+      {
+        "precio": 38.9,
+        "nombre": "Mermelada fresa",
+        "descripcion": "Clemente 470gr."
+      },
+      {
+        "nombre": "Palomitas ACT2",
+        "precio": 17,
+        "descripcion": "Queso jalapeño 89gr"
+      },
+      {
+        "descripcion": "200 gr 4.80 C/U",
+        "precio": 24,
+        "nombre": "italpasta linguini"
+      },
+      {
+        "precio": 38.5,
+        "nombre": "Yakult",
+        "descripcion": "Paquete de 5"
+      },
+      {
+        "nombre": "Maruchan vaso",
+        "precio": 58.8,
+        "descripcion": "14.70 C/U"
+      },
+      {
+        "nombre": "Maruchan bolsa",
+        "descripcion": "8.10",
+        "precio": 81
+      },
+      {
+        "nombre": "Tortillas de harina",
+        "precio": 51,
+        "descripcion": "2 paquetes de 18 25.50 C/U"
+      }
+    ]
+  },
+  {
+    "id": "XBzks8a4T7mrw3VWEdqo",
+    "productos": [
+      {
+        "descripcion": "Harina",
+        "precio": 25,
+        "nombre": "Tortilla"
+      },
+      {
+        "nombre": "Tortilla",
+        "precio": 25,
+        "descripcion": "Maiz"
+      },
+      {
+        "descripcion": "2 panes",
+        "nombre": "Pan",
+        "precio": 20
+      },
+      {
+        "precio": 20,
+        "nombre": "Aguacate",
+        "descripcion": "2"
+      }
+    ],
+    "estado": "expirada",
+    "isEvento": false,
+    "createdAt": {
+      "type": "firestore/timestamp/1.0",
+      "seconds": 1755750248,
+      "nanoseconds": 376000000
+    },
+    "pagoMensual": false,
+    "fecha": "2025-08-20",
+    "completada": true,
+    "lugar": "Tienda señora carera",
+    "_notificacionDescartada": false
+  },
+  {
+    "id": "XhfiUiCAVyzTgMYNndnH",
+    "lugar": "Didi paga después",
+    "fecha": "2025-09-02",
+    "estado": "expirada",
+    "completada": true,
+    "productos": [
+      {
+        "nombre": "Primer pago tablet",
+        "descripcion": "Son 2 quincenas quincena 1",
+        "precio": 875
+      }
+    ],
+    "pagoMensual": false,
+    "_notificacionDescartada": false,
+    "createdAt": {
+      "type": "firestore/timestamp/1.0",
+      "seconds": 1755534884,
+      "nanoseconds": 97000000
+    }
+  },
+  {
+    "id": "YUfwMJ8yS5HPi2arp7bG",
+    "_notificacionDescartada": true,
+    "lugar": "Tianguis domingo SP",
+    "createdAt": {
+      "type": "firestore/timestamp/1.0",
+      "seconds": 1754839802,
+      "nanoseconds": 807000000
+    },
+    "estado": "expirada",
+    "productos": [
+      {
+        "precio": 150,
+        "nombre": "Filete lenguado",
+        "descripcion": "Entrada por banco"
+      },
+      {
+        "descripcion": "Entrada por banco",
+        "precio": 100,
+        "nombre": "Pechuga pollo"
+      },
+      {
+        "descripcion": "Kilo donde siempre",
+        "nombre": "Guayaba",
+        "precio": 10
+      },
+      {
+        "nombre": "Papás bolsa",
+        "descripcion": "Donde siempre",
+        "precio": 20
+      },
+      {
+        "nombre": "Cebolla bolsa",
+        "descripcion": "Bolsa donde siempre",
+        "precio": 10
+      },
+      {
+        "descripcion": "Donde siempre el kilo",
+        "precio": 30,
+        "nombre": "Manzana chica"
+      },
+      {
+        "nombre": "Especias",
+        "precio": 30,
+        "descripcion": "Chile mirasol, ancho y ajos"
+      },
+      {
+        "descripcion": "Niños ambulantes buena porción",
+        "precio": 35,
+        "nombre": "Pastel red velvet"
+      },
+      {
+        "nombre": "Mochila",
+        "descripcion": "Para cargar cosas tianguis",
+        "precio": 25
+      },
+      {
+        "precio": 20,
+        "nombre": "Peluche taco",
+        "descripcion": "Bonito"
+      },
+      {
+        "nombre": "Rompecabezas",
+        "precio": 70,
+        "descripcion": "2 de kimetsu"
+      },
+      {
+        "nombre": "Trapos",
+        "descripcion": "3 trapos medianos",
+        "precio": 30
+      },
+      {
+        "nombre": "Plátanos",
+        "precio": 20,
+        "descripcion": ""
+      },
+      {
+        "nombre": "Tacos Coppel",
+        "descripcion": "14 tacos 2 refrescos",
+        "precio": 250
+      }
+    ],
+    "fecha": "2025-08-10",
+    "pagoMensual": false
+  },
+  {
+    "id": "YVBjOQxb93rcWP72pg5s",
+    "createdAt": {
+      "type": "firestore/timestamp/1.0",
+      "seconds": 1757377512,
+      "nanoseconds": 845000000
+    },
+    "estado": "expirada",
+    "lugar": "Tienda señora carera",
+    "productos": [
+      {
+        "descripcion": "5 rebanadas",
+        "precio": 20,
+        "nombre": "Jamón"
+      },
+      {
+        "nombre": "Birotes",
+        "precio": 24,
+        "descripcion": "Tres birotes $8 c/u"
+      },
+      {
+        "nombre": "Mayonesa",
+        "descripcion": "Mediana",
+        "precio": 28
+      },
+      {
+        "precio": 11,
+        "descripcion": "Lata pequeña",
+        "nombre": "Chiles jalapeños"
+      }
+    ],
+    "completada": true,
+    "_notificacionDescartada": false,
+    "createdAtClient": "2025-09-09T00:25:12.123Z",
+    "isEvento": false,
+    "pagoMensual": false,
+    "fecha": "2025-09-08"
+  },
+  {
+    "id": "ZcotYeuu0409ATIb3Vxo",
+    "createdAt": {
+      "type": "firestore/timestamp/1.0",
+      "seconds": 1764428102,
+      "nanoseconds": 102000000
+    },
+    "productos": [
+      {
+        "precio": 20,
+        "nombre": "Mexicanas",
+        "descripcion": "2 piezas"
+      },
+      {
+        "precio": 30,
+        "nombre": "Tang",
+        "descripcion": "6 piezas"
+      },
+      {
+        "descripcion": "4 piezas",
+        "nombre": "Boing",
+        "precio": 92
+      },
+      {
+        "nombre": "Doritos 3D",
+        "descripcion": "1",
+        "precio": 10
+      },
+      {
+        "nombre": "Pan bimbo",
+        "precio": 45,
+        "descripcion": "Grande"
+      },
+      {
+        "precio": 40,
+        "nombre": "Pan Hotdog (medias noches bimbo)",
+        "descripcion": ""
+      },
+      {
+        "descripcion": "",
+        "precio": 15,
+        "nombre": "Lechera"
+      },
+      {
+        "descripcion": "",
+        "precio": 23,
+        "nombre": "Cachitos"
+      },
+      {
+        "precio": 15,
+        "nombre": "Sopa fideo",
+        "descripcion": "2 piezas italpasta"
+      },
+      {
+        "descripcion": "3 piezas moderna",
+        "nombre": "Sopa",
+        "precio": 25
+      },
+      {
+        "descripcion": "3 piezas super extra",
+        "nombre": "Arroz Bodega",
+        "precio": 48
+      },
+      {
+        "nombre": "Aceita canoli",
+        "precio": 35,
+        "descripcion": "946 ml"
+      },
+      {
+        "nombre": "Toallitas",
+        "precio": 20,
+        "descripcion": "Bebyto"
+      },
+      {
+        "descripcion": "",
+        "precio": 14,
+        "nombre": "Vinagre blanco"
+      },
+      {
+        "nombre": "Vinagre de manzana",
+        "precio": 16,
+        "descripcion": ""
+      },
+      {
+        "descripcion": "9 c/u de bolsa",
+        "nombre": "Maruchan",
+        "precio": 45
+      },
+      {
+        "descripcion": "3 Palmolive clásico",
+        "precio": 22.5,
+        "nombre": "Jabón barra"
+      },
+      {
+        "nombre": "Salvo",
+        "precio": 55,
+        "descripcion": "1,2 L"
+      },
+      {
+        "descripcion": "160 ML.",
+        "nombre": "Colgate Xtra blancura",
+        "precio": 35
+      },
+      {
+        "precio": 30,
+        "nombre": "Rollo mega jumbo petalo",
+        "descripcion": "4 rollos 500 H"
+      },
+      {
+        "precio": 20,
+        "nombre": "Mantequilla delicia",
+        "descripcion": "10 C/U"
+      },
+      {
+        "descripcion": "70 gr 6 piezas",
+        "nombre": "Bolillo Bodega",
+        "precio": 13
+      },
+      {
+        "descripcion": "390 gr",
+        "nombre": "Mayonesa McCormick",
+        "precio": 55
+      },
+      {
+        "precio": 13.5,
+        "descripcion": "220gr",
+        "nombre": "Chiles jalapeños"
+      },
+      {
+        "precio": 25,
+        "nombre": "Servilletas Fancy",
+        "descripcion": "280"
+      }
+    ],
+    "isEvento": false,
+    "pagoMensual": false,
+    "_notificacionDescartada": false,
+    "lugar": "Bodega SP",
+    "estado": "expirada",
+    "fecha": "2025-11-29"
+  },
+  {
+    "id": "dCsIBDISH8Lu2zBv9K1F",
+    "createdAt": {
+      "type": "firestore/timestamp/1.0",
+      "seconds": 1755751114,
+      "nanoseconds": 919000000
+    },
+    "lugar": "Unidad Ginecológica Boulevard Tlaq.",
+    "isEvento": true,
+    "fecha": "2026-02-07",
+    "pagoMensual": false,
+    "productos": [
+      {
+        "nombre": "Revision ginecóloga",
+        "precio": 0,
+        "descripcion": "Revisión de rutina 6 meses"
+      }
+    ],
+    "_notificacionDescartada": false,
+    "estado": "caducado"
+  },
+  {
+    "id": "e8ItFKYfKrioODU1R8Jw",
+    "fecha": "2025-10-27",
+    "completada": true,
+    "_notificacionDescartada": false,
+    "estado": "expirada",
+    "pagoMensual": false,
+    "createdAt": {
+      "type": "firestore/timestamp/1.0",
+      "seconds": 1761609560,
+      "nanoseconds": 864000000
+    },
+    "productos": [
+      {
+        "descripcion": "",
+        "nombre": "Leche sello rojo 2L",
+        "precio": 50
+      },
+      {
+        "precio": 37,
+        "nombre": "Queso",
+        "descripcion": ""
+      },
+      {
+        "descripcion": "",
+        "precio": 25,
+        "nombre": "Tortilla"
+      },
+      {
+        "descripcion": "10 rebanadas",
+        "precio": 40,
+        "nombre": "Jamon"
+      }
+    ],
+    "isEvento": false,
+    "lugar": "Tienda señora carera"
+  },
+  {
+    "id": "eVq43VR8bHbTy90a0DUt",
+    "createdAt": {
+      "type": "firestore/timestamp/1.0",
+      "seconds": 1754940502,
+      "nanoseconds": 683000000
+    },
+    "pagoMensual": false,
+    "fecha": "2025-09-01",
+    "lugar": "Mercado pago",
+    "completada": true,
+    "estado": "expirada",
+    "_notificacionDescartada": false,
+    "productos": [
+      {
+        "precio": 2313,
+        "descripcion": "Mensualidad tarjeta crédito.",
+        "nombre": "Pago mercado pago"
+      },
+      {
+        "precio": 150,
+        "nombre": "Recarga jaquii",
+        "descripcion": "Vence el 8"
+      },
+      {
+        "precio": 355,
+        "nombre": "Pastel cajeta Marisa capricho",
+        "descripcion": "Cajeta capricho"
+      },
+      {
+        "descripcion": "Rosa",
+        "nombre": "Funda tablet",
+        "precio": 128
+      }
+    ]
+  },
+  {
+    "id": "g3jDdraJMDWKBjl40Jm8",
+    "completada": true,
+    "fecha": "2025-08-12",
+    "productos": [
+      {
+        "precio": 355,
+        "descripcion": "Rico",
+        "nombre": "Pastel cajeta capricho"
+      }
+    ],
+    "_notificacionDescartada": false,
+    "pagoMensual": false,
+    "lugar": "Marisa",
+    "estado": "expirada",
+    "createdAt": {
+      "type": "firestore/timestamp/1.0",
+      "seconds": 1755040556,
+      "nanoseconds": 765000000
+    }
+  },
+  {
+    "id": "gM3aznFCOgSMfTEgG1gC",
+    "fecha": "2025-10-05",
+    "_notificacionDescartada": false,
+    "estado": "expirada",
+    "createdAtClient": "2025-10-05T15:40:12.854Z",
+    "createdAt": {
+      "type": "firestore/timestamp/1.0",
+      "seconds": 1759678814,
+      "nanoseconds": 654000000
+    },
+    "pagoMensual": false,
+    "productos": [
+      {
+        "nombre": "Filete pollo 3",
+        "descripcion": "Creo 680 grms",
+        "precio": 95
+      }
+    ],
+    "isEvento": false,
+    "lugar": "Tianguis domingo SP"
+  },
+  {
+    "id": "grAUP8i8HGNseuGdj8ck",
+    "lugar": "Bbva",
+    "createdAt": {
+      "type": "firestore/timestamp/1.0",
+      "seconds": 1754958449,
+      "nanoseconds": 117000000
+    },
+    "completada": true,
+    "_notificacionDescartada": false,
+    "pagoMensual": false,
+    "fecha": "2025-08-25",
+    "productos": [
+      {
+        "nombre": "BBVA oro",
+        "precio": 3625,
+        "descripcion": ""
+      }
+    ],
+    "estado": "expirada"
+  },
+  {
+    "id": "j5z2Higo5lCAUxrojg0j",
+    "pagoMensual": false,
+    "_notificacionDescartada": false,
+    "isEvento": false,
+    "lugar": "Tienda fea esquina",
+    "fecha": "2025-11-13",
+    "createdAt": {
+      "type": "firestore/timestamp/1.0",
+      "seconds": 1763080072,
+      "nanoseconds": 470000000
+    },
+    "productos": [
+      {
+        "nombre": "Leche lala 2l",
+        "descripcion": "Leche verde",
+        "precio": 30
+      },
+      {
+        "nombre": "Queso",
+        "precio": 50,
+        "descripcion": "Adobera 1/4"
+      },
+      {
+        "nombre": "Crema lala",
+        "precio": 27,
+        "descripcion": "Vaso"
+      },
+      {
+        "nombre": "Mantequilla",
+        "descripcion": "",
+        "precio": 30
+      },
+      {
+        "nombre": "Iva",
+        "descripcion": "5%",
+        "precio": 10
+      },
+      {
+        "precio": 30,
+        "nombre": "Birotes",
+        "descripcion": "3 birotes $10 c/u"
+      }
+    ],
+    "estado": "expirada"
+  },
+  {
+    "id": "jvcFelPU6Mkyi8RNHJw6",
+    "createdAtClient": "2026-01-13T19:21:15.232Z",
+    "pagoMensual": true,
+    "fecha": "2026-02-19",
+    "estado": "pendiente",
+    "isEvento": false,
+    "lugar": "Uber one",
+    "_notificacionDescartada": false,
+    "productos": [
+      {
+        "precio": 79,
+        "nombre": "Uber one mensualidad",
+        "descripcion": ""
+      }
+    ],
+    "createdAt": {
+      "type": "firestore/timestamp/1.0",
+      "seconds": 1768332077,
+      "nanoseconds": 190000000
+    },
+    "completada": false
+  },
+  {
+    "id": "kY4KTQXU7gvypy7EV2Wi",
+    "_notificacionDescartada": true,
+    "createdAt": {
+      "type": "firestore/timestamp/1.0",
+      "seconds": 1754235438,
+      "nanoseconds": 880000000
+    },
+    "fecha": "2025-08-03",
+    "productos": [
+      {
+        "nombre": "Fresa",
+        "precio": 40,
+        "descripcion": "Caja bonita"
+      },
+      {
+        "precio": 30,
+        "descripcion": "2x30",
+        "nombre": "Tuna"
+      },
+      {
+        "descripcion": "50 el kilo más o menos y chico",
+        "precio": 50,
+        "nombre": "Aguacate"
+      },
+      {
+        "nombre": "Azucar",
+        "precio": 34,
+        "descripcion": "17 el kilo"
+      },
+      {
+        "nombre": "Pastillas menta",
+        "descripcion": "La bolsa",
+        "precio": 20
+      },
+      {
+        "precio": 25,
+        "descripcion": "Media piña grande",
+        "nombre": "Piña"
+      },
+      {
+        "precio": 30,
+        "descripcion": "2x30 la bola",
+        "nombre": "Melón"
+      },
+      {
+        "nombre": "Tacos música chida",
+        "precio": 190,
+        "descripcion": "19 el taco 30 el agua buena"
+      },
+      {
+        "precio": 100,
+        "nombre": "Monopoly xbox one",
+        "descripcion": ""
+      },
+      {
+        "precio": 20,
+        "nombre": "Uvas",
+        "descripcion": "Medio kilo"
+      }
+    ],
+    "lugar": "Tianguis domingo SP",
+    "estado": "expirada"
+  },
+  {
+    "id": "lwGgxWVYWslEQOOuRyvT",
+    "completada": true,
+    "estado": "expirada",
+    "productos": [
+      {
+        "descripcion": "3 piezas super extra 17 C/U 900gr.",
+        "precio": 51,
+        "nombre": "Arroz Bodega"
+      },
+      {
+        "precio": 50,
+        "descripcion": "2 x 1 | 160gr corn pops y 220 chocokrispis",
+        "nombre": "Cereal"
+      },
+      {
+        "nombre": "Frijoles Peruanos refritos",
+        "descripcion": "2 X 30 473 | 10 % regalo",
+        "precio": 30
+      },
+      {
+        "descripcion": "206 gr",
+        "nombre": "italpasta fusilli",
+        "precio": 10
+      },
+      {
+        "descripcion": "100 gr.",
+        "precio": 5,
+        "nombre": "Jabon zote"
+      },
+      {
+        "precio": 26,
+        "descripcion": "397gr bolsa",
+        "nombre": "ketchup (catsup) Heinz"
+      },
+      {
+        "precio": 84,
+        "descripcion": "870gr",
+        "nombre": "Mayonesa McCormick"
+      },
+      {
+        "precio": 15,
+        "descripcion": "Queso Extra mantequilla 87gr",
+        "nombre": "Palomitas ACT2"
+      },
+      {
+        "descripcion": "259 grm Del fuerte",
+        "nombre": "Pure de tomate",
+        "precio": 11
+      },
+      {
+        "nombre": "Rollo mega jumbo petalo",
+        "precio": 100,
+        "descripcion": "4 rollos 500 H 25 C/U"
+      },
+      {
+        "nombre": "Servilletas Fancy",
+        "precio": 28,
+        "descripcion": "280"
+      }
+    ],
+    "_notificacionDescartada": false,
+    "createdAt": {
+      "type": "firestore/timestamp/1.0",
+      "seconds": 1768668892,
+      "nanoseconds": 979000000
+    },
+    "isEvento": false,
+    "fecha": "2026-01-17",
+    "pagoMensual": false,
+    "lugar": "Bodega Aurrera."
+  },
+  {
+    "id": "lyXMJphDYD4fCTvm7kYW",
+    "createdAtClient": "2025-11-18T16:07:36.660Z",
+    "_notificacionDescartada": false,
+    "lugar": "Clínica 93 IMSS",
+    "pagoMensual": false,
+    "estado": "pendiente",
+    "completada": false,
+    "createdAt": {
+      "type": "firestore/timestamp/1.0",
+      "seconds": 1763482057,
+      "nanoseconds": 665000000
+    },
+    "fecha": "2026-11-18",
+    "isEvento": true,
+    "productos": [
+      {
+        "precio": 0,
+        "nombre": "Inyección influenza",
+        "descripcion": "Con señora tarjeton"
+      }
+    ]
+  },
+  {
+    "id": "nN7caxgOCQB7QviFwdJS",
+    "_notificacionDescartada": false,
+    "fecha": "2025-09-10",
+    "productos": [
+      {
+        "nombre": "Croquetas perro",
+        "descripcion": "Costal 20 kg",
+        "precio": 265
+      }
+    ],
+    "isEvento": false,
+    "estado": "expirada",
+    "completada": true,
+    "createdAt": {
+      "type": "firestore/timestamp/1.0",
+      "seconds": 1755640621,
+      "nanoseconds": 695000000
+    },
+    "pagoMensual": false,
+    "lugar": "Abarrotes la Unika"
+  },
+  {
+    "id": "nU1yhxmqfF0T6fj0ur5p",
+    "productos": [
+      {
+        "precio": 1800,
+        "nombre": "Camiones y tren",
+        "descripcion": "Calculo de 60 pesos diarios tu y yo"
+      }
+    ],
+    "estado": "pendiente",
+    "_notificacionDescartada": false,
+    "lugar": "Transporte",
+    "fecha": "2026-02-28",
+    "createdAtClient": "2025-10-30T18:54:43.575Z",
+    "createdAt": {
+      "type": "firestore/timestamp/1.0",
+      "seconds": 1761850484,
+      "nanoseconds": 861000000
+    },
+    "completada": false,
+    "isEvento": false,
+    "pagoMensual": true
+  },
+  {
+    "id": "nftWplBVOy8kVClCG9CE",
+    "createdAt": {
+      "type": "firestore/timestamp/1.0",
+      "seconds": 1754019161,
+      "nanoseconds": 445000000
+    },
+    "estado": "expirada",
+    "fecha": "2025-07-27",
+    "_notificacionDescartada": true,
+    "productos": [
+      {
+        "precio": 67,
+        "descripcion": "102 el kilo",
+        "nombre": "Pechuga entera"
+      }
+    ],
+    "lugar": "Super carnes"
+  },
+  {
+    "id": "nuDQPDjjiSxPW0PoAM6I",
+    "_notificacionDescartada": false,
+    "productos": [
+      {
+        "precio": 74,
+        "nombre": "Kimetsu pelicula",
+        "descripcion": "Ver película ya pagado."
+      }
+    ],
+    "isEvento": true,
+    "pagoMensual": false,
+    "completada": true,
+    "createdAt": {
+      "type": "firestore/timestamp/1.0",
+      "seconds": 1755286108,
+      "nanoseconds": 284000000
+    },
+    "lugar": "Cinemex Tlaquepaque",
+    "estado": "caducado",
+    "fecha": "2025-09-13"
+  },
+  {
+    "id": "ozk79RpYsKuAKdhdIGY8",
+    "isEvento": false,
+    "pagoMensual": false,
+    "_notificacionDescartada": false,
+    "lugar": "Nu",
+    "createdAt": {
+      "type": "firestore/timestamp/1.0",
+      "seconds": 1755996174,
+      "nanoseconds": 558000000
+    },
+    "completada": true,
+    "estado": "expirada",
+    "fecha": "2025-09-01",
+    "productos": [
+      {
+        "descripcion": "Crédito",
+        "nombre": "Tarjeta Nu",
+        "precio": 100
+      }
+    ]
+  },
+  {
+    "id": "pfIzKYnopjSHUPXlY8Fv",
+    "lugar": "Bbva",
+    "estado": "expirada",
+    "_notificacionDescartada": false,
+    "productos": [
+      {
+        "precio": 3000,
+        "descripcion": "",
+        "nombre": "BBVA oro"
+      }
+    ],
+    "createdAt": {
+      "type": "firestore/timestamp/1.0",
+      "seconds": 1757117407,
+      "nanoseconds": 931000000
+    },
+    "fecha": "2025-09-23",
+    "completada": true,
+    "pagoMensual": false,
+    "isEvento": false
+  },
+  {
+    "id": "rA96eAxilYFrdkhKoea5",
+    "createdAtClient": "2025-09-05T13:35:54.231Z",
+    "estado": "expirada",
+    "fecha": "2025-10-01",
+    "completada": true,
+    "pagoMensual": false,
+    "createdAt": {
+      "type": "firestore/timestamp/1.0",
+      "seconds": 1757079355,
+      "nanoseconds": 728000000
+    },
+    "productos": [
+      {
+        "descripcion": "Cajeta capricho",
+        "precio": 355,
+        "nombre": "Pastel cajeta Marisa capricho"
+      },
+      {
+        "descripcion": "Para el tren",
+        "precio": 100,
+        "nombre": "Recarga saldo movilidad"
+      },
+      {
+        "precio": 88,
+        "nombre": "Papas y maruchan FG",
+        "descripcion": "Papas habanero buenas y 2 maruchan"
+      },
+      {
+        "precio": 58,
+        "nombre": "FG",
+        "descripcion": "Sabrá dios"
+      },
+      {
+        "descripcion": "",
+        "precio": 20,
+        "nombre": "Nose"
+      },
+      {
+        "precio": 128.43,
+        "descripcion": "Rosa",
+        "nombre": "Funda tablet paypal"
+      },
+      {
+        "precio": 400,
+        "nombre": "Recargas tren",
+        "descripcion": "2 de 200"
+      }
+    ],
+    "_notificacionDescartada": false,
+    "lugar": "Mercado pago",
+    "isEvento": false
+  },
+  {
+    "id": "tE2WuZkpn8hhCqPO8o4t",
+    "estado": "expirada",
+    "lugar": "Mercado pago",
+    "completada": true,
+    "productos": [
+      {
+        "descripcion": "Transferencia para promo",
+        "nombre": "Meses sin tarjeta",
+        "precio": 207
+      },
+      {
+        "precio": 450,
+        "nombre": "Rodillera reloj y herramienta",
+        "descripcion": ""
+      }
+    ],
+    "fecha": "2025-09-17",
+    "createdAt": {
+      "type": "firestore/timestamp/1.0",
+      "seconds": 1756481524,
+      "nanoseconds": 735000000
+    },
+    "_notificacionDescartada": false,
+    "pagoMensual": false,
+    "isEvento": false
+  },
+  {
+    "id": "tLY4g3saSuyr05JUnGPI",
+    "createdAt": {
+      "type": "firestore/timestamp/1.0",
+      "seconds": 1757117494,
+      "nanoseconds": 187000000
+    },
+    "fecha": "2025-10-01",
+    "pagoMensual": false,
+    "_notificacionDescartada": false,
+    "lugar": "Nu",
+    "isEvento": false,
+    "productos": [
+      {
+        "precio": 4100,
+        "nombre": "Tarjeta Nu",
+        "descripcion": "Crédito"
+      }
+    ],
+    "estado": "expirada"
+  },
+  {
+    "id": "tuZ7fDxycmNcKVUjvAYC",
+    "isEvento": false,
+    "productos": [
+      {
+        "precio": 51,
+        "nombre": "Pan bimbo",
+        "descripcion": ""
+      },
+      {
+        "nombre": "salchicha y tocino",
+        "precio": 109,
+        "descripcion": "Premium"
+      },
+      {
+        "descripcion": "2 x1",
+        "nombre": "Cereal",
+        "precio": 100
+      },
+      {
+        "nombre": "Refrescos",
+        "descripcion": "25 con promoción",
+        "precio": 50
+      },
+      {
+        "precio": 45,
+        "nombre": "Leche",
+        "descripcion": "19 herm 3 lit"
+      },
+      {
+        "precio": 55,
+        "nombre": "Yogurt",
+        "descripcion": "Lala griego"
+      },
+      {
+        "nombre": "Margarina",
+        "precio": 30,
+        "descripcion": "225 grm"
+      },
+      {
+        "precio": 15,
+        "descripcion": "2x15",
+        "nombre": "Pasta"
+      },
+      {
+        "precio": 26,
+        "nombre": "Sopa instantánea",
+        "descripcion": "100 grm 2 sopas"
+      },
+      {
+        "descripcion": "345 grm",
+        "nombre": "Pure de tomate",
+        "precio": 15
+      },
+      {
+        "nombre": "Cachitos chocolate",
+        "descripcion": "250 grm",
+        "precio": 23
+      },
+      {
+        "nombre": "Lecha santa clara mini",
+        "descripcion": "3 X 25 180 ml",
+        "precio": 25
+      },
+      {
+        "precio": 27,
+        "nombre": "Yogurt lala bebible",
+        "descripcion": "9 cada uno"
+      },
+      {
+        "precio": 30,
+        "descripcion": "2 X 30 74 grm",
+        "nombre": "Atún sobre dolores"
+      },
+      {
+        "descripcion": "220 grm",
+        "nombre": "Atún lata doble dolores",
+        "precio": 41
+      },
+      {
+        "descripcion": "Herdez",
+        "precio": 16,
+        "nombre": "Lata elote"
+      },
+      {
+        "nombre": "Tang horchata",
+        "descripcion": "6",
+        "precio": 25
+      },
+      {
+        "precio": 21,
+        "nombre": "Valle mango",
+        "descripcion": ""
+      },
+      {
+        "nombre": "Mini pan tostado",
+        "precio": 25,
+        "descripcion": ""
+      },
+      {
+        "descripcion": "",
+        "nombre": "Chocolatinas",
+        "precio": 35
+      },
+      {
+        "nombre": "Senzo emperador",
+        "precio": 35,
+        "descripcion": ""
+      },
+      {
+        "descripcion": "",
+        "precio": 48,
+        "nombre": "Saladitas caja grande"
+      },
+      {
+        "descripcion": "",
+        "nombre": "Cajitas",
+        "precio": 25
+      },
+      {
+        "nombre": "Pétalo rendimax",
+        "descripcion": "",
+        "precio": 169
+      },
+      {
+        "nombre": "Suave servilletas",
+        "precio": 39,
+        "descripcion": ""
+      },
+      {
+        "nombre": "Axion",
+        "descripcion": "",
+        "precio": 32
+      },
+      {
+        "nombre": "Poet 1.8l",
+        "precio": 30,
+        "descripcion": ""
+      },
+      {
+        "nombre": "Olds pice",
+        "precio": 100,
+        "descripcion": "2 X 100"
+      },
+      {
+        "descripcion": "2",
+        "nombre": "Desodorante rexona",
+        "precio": 62
+      },
+      {
+        "precio": 150,
+        "nombre": "Cosas de 25",
+        "descripcion": ""
+      },
+      {
+        "nombre": "Shampoo pert",
+        "precio": 40,
+        "descripcion": ""
+      },
+      {
+        "descripcion": "",
+        "nombre": "Shampoo head and shoulder",
+        "precio": 25
+      },
+      {
+        "nombre": "Chilorio",
+        "descripcion": "",
+        "precio": 67
+      },
+      {
+        "precio": 45,
+        "nombre": "Frijoles con chorizo",
+        "descripcion": "2"
+      },
+      {
+        "precio": 25,
+        "descripcion": "",
+        "nombre": "Nesquick chocolate"
+      },
+      {
+        "descripcion": "",
+        "precio": 40,
+        "nombre": "Pan Hotdog (medias noches bimbo)"
+      },
+      {
+        "descripcion": "7 cu",
+        "precio": 14,
+        "nombre": "Pan piña rollo"
+      },
+      {
+        "descripcion": "Mediano chico",
+        "nombre": "Trapo cocina",
+        "precio": 16
+      },
+      {
+        "precio": 22,
+        "nombre": "Tupper",
+        "descripcion": ""
+      },
+      {
+        "descripcion": "",
+        "nombre": "Yakult",
+        "precio": 38
+      },
+      {
+        "precio": 52,
+        "nombre": "Jarritos",
+        "descripcion": ""
+      },
+      {
+        "precio": 29,
+        "descripcion": "",
+        "nombre": "Jabonera baño"
+      },
+      {
+        "precio": 18,
+        "nombre": "Lechera",
+        "descripcion": ""
+      },
+      {
+        "descripcion": "D gary",
+        "nombre": "Gelatina",
+        "precio": 11
+      }
+    ],
+    "estado": "expirada",
+    "createdAt": {
+      "type": "firestore/timestamp/1.0",
+      "seconds": 1755996620,
+      "nanoseconds": 726000000
+    },
+    "pagoMensual": false,
+    "_notificacionDescartada": true,
+    "fecha": "2025-08-23",
+    "lugar": "Bodega Aurrera"
+  },
+  {
+    "id": "v0uGgyRDq0pV18K194Vv",
+    "createdAtClient": "2025-09-07T02:01:59.675Z",
+    "lugar": "Go pro",
+    "pagoMensual": false,
+    "isEvento": false,
+    "productos": [
+      {
+        "precio": 1000,
+        "descripcion": "Cancelar antes",
+        "nombre": "Go pro anualidad"
+      }
+    ],
+    "completada": true,
+    "_notificacionDescartada": false,
+    "createdAt": {
+      "type": "firestore/timestamp/1.0",
+      "seconds": 1757210521,
+      "nanoseconds": 37000000
+    },
+    "fecha": "2026-01-07",
+    "estado": "expirada"
+  },
+  {
+    "id": "w1yM6TnjXNgFLGPiEYzR",
+    "_notificacionDescartada": false,
+    "createdAt": {
+      "type": "firestore/timestamp/1.0",
+      "seconds": 1761001767,
+      "nanoseconds": 736000000
+    },
+    "isEvento": false,
+    "productos": [
+      {
+        "descripcion": "",
+        "nombre": "Megacable",
+        "precio": 300
+      }
+    ],
+    "completada": false,
+    "fecha": "2026-03-05",
+    "estado": "pendiente",
+    "lugar": "Megacable",
+    "pagoMensual": true
+  },
+  {
+    "id": "wntGmz9nEiUZb9leFcR2",
+    "_notificacionDescartada": false,
+    "createdAt": {
+      "type": "firestore/timestamp/1.0",
+      "seconds": 1754934678,
+      "nanoseconds": 515000000
+    },
+    "completada": true,
+    "estado": "expirada",
+    "pagoMensual": false,
+    "lugar": "Farmacias Guadalajara",
+    "fecha": "2025-08-06",
+    "productos": [
+      {
+        "descripcion": "389 c/u oferta precio normal 1,163",
+        "nombre": "Bioprotect 30 capsulas",
+        "precio": 774
+      },
+      {
+        "nombre": "Ácido folico 400 MC 90T valdecas",
+        "precio": 17,
+        "descripcion": "47 precio normal"
+      }
+    ]
+  },
+  {
+    "id": "xNVc8aSgPnuRoJqXvxYr",
+    "lugar": "Didi paga después",
+    "_notificacionDescartada": false,
+    "createdAt": {
+      "type": "firestore/timestamp/1.0",
+      "seconds": 1755534965,
+      "nanoseconds": 702000000
+    },
+    "fecha": "2025-09-17",
+    "pagoMensual": false,
+    "productos": [
+      {
+        "nombre": "Segundo pago tablet",
+        "precio": 875,
+        "descripcion": "Son 2 quincenas quincena 2"
+      }
+    ],
+    "estado": "expirada",
+    "completada": true
+  },
+  {
+    "id": "xqrfeUu6saZhF24K1f36",
+    "pagoMensual": false,
+    "isEvento": false,
+    "estado": "expirada",
+    "createdAtClient": "2025-09-07T02:34:13.883Z",
+    "_notificacionDescartada": false,
+    "productos": [
+      {
+        "nombre": "Fotos graduación",
+        "precio": 790,
+        "descripcion": ""
+      }
+    ],
+    "fecha": "2025-09-05",
+    "createdAt": {
+      "type": "firestore/timestamp/1.0",
+      "seconds": 1757212455,
+      "nanoseconds": 315000000
+    },
+    "lugar": "Musa"
+  },
+  {
+    "id": "yma2ygOwPwlhLp0muYSv",
+    "lugar": "Tienda señora carera",
+    "completada": true,
+    "fecha": "2025-09-01",
+    "pagoMensual": false,
+    "createdAt": {
+      "type": "firestore/timestamp/1.0",
+      "seconds": 1756772039,
+      "nanoseconds": 637000000
+    },
+    "isEvento": false,
+    "estado": "expirada",
+    "_notificacionDescartada": false,
+    "productos": [
+      {
+        "precio": 29,
+        "descripcion": "Lala verde",
+        "nombre": "Leche Lala 1L"
+      },
+      {
+        "precio": 35,
+        "nombre": "Queso",
+        "descripcion": ""
+      },
+      {
+        "nombre": "Tomates",
+        "descripcion": "",
+        "precio": 10
+      }
+    ]
+  },
+  {
+    "id": "z1Dp2ajgyEUAm36LiFti",
+    "lugar": "Pemex SP",
+    "productos": [
+      {
+        "nombre": "Gasolina",
+        "precio": 700,
+        "descripcion": "Subió a 3 / 4"
+      }
+    ],
+    "estado": "expirada",
+    "fecha": "2025-08-11",
+    "completada": true,
+    "createdAt": {
+      "type": "firestore/timestamp/1.0",
+      "seconds": 1754940417,
+      "nanoseconds": 390000000
+    },
+    "pagoMensual": false,
+    "_notificacionDescartada": false
+  },
+  {
+    "id": "zuKiurDs9KjW7X6JDbBf",
+    "estado": "pendiente",
+    "_notificacionDescartada": false,
+    "completada": false,
+    "productos": [
+      {
+        "nombre": "Spotify",
+        "descripcion": "Estudiantes hasta 24 agosto 2026",
+        "precio": 79
+      }
+    ],
+    "lugar": "Spotify",
+    "fecha": "2026-03-11",
+    "pagoMensual": true,
+    "createdAt": {
+      "type": "firestore/timestamp/1.0",
+      "seconds": 1754927182,
+      "nanoseconds": 7000000
+    },
+    "isEvento": false
+  },
+  {
+    "id": "kY53TDnS4d1KsUbnG8zE",
+    "isEvento": false,
+    "createdAt": {
+      "type": "firestore/timestamp/1.0",
+      "seconds": 1768696871,
+      "nanoseconds": 188000000
+    },
+    "productos": [
+      {
+        "descripcion": "",
+        "precio": 0,
+        "nombre": "Jitomate"
+      },
+      {
+        "nombre": "Papa",
+        "precio": 0,
+        "descripcion": ""
+      },
+      {
+        "nombre": "Pollo",
+        "descripcion": "",
+        "precio": 0
+      },
+      {
+        "precio": 0,
+        "descripcion": "",
+        "nombre": "Ajo"
+      },
+      {
+        "descripcion": "",
+        "nombre": "Tómates",
+        "precio": 0
+      },
+      {
+        "nombre": "Chiles de arbol",
+        "precio": 0,
+        "descripcion": ""
+      },
+      {
+        "precio": 265,
+        "descripcion": "Costal 20 kg",
+        "nombre": "Croquetas perro"
+      },
+      {
+        "descripcion": "",
+        "precio": 0,
+        "nombre": "Melón"
+      },
+      {
+        "descripcion": "",
+        "nombre": "Sandía",
+        "precio": 0
+      }
+    ],
+    "fecha": "2026-01-18",
+    "_notificacionDescartada": false,
+    "createdAtClient": "2026-01-18T00:41:09.588Z",
+    "lugar": "Tianguis domingo SP",
+    "pagoMensual": false,
+    "estado": "expirada"
+  }
+]

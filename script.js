@@ -1505,6 +1505,8 @@ async function actualizarNotificaciones(listasExternas = null) {
     // ⛔️ Importante: NO tocar aquí el badge de notifs (evita parpadeo)
     // renderMenuBadge(pendientesPorFecha.length, 'notifs');  // <-- eliminado
 
+    renderInicio();
+
   } catch(e) { console.error("Error actualizarNotificaciones:", e); }
 }
 
@@ -2921,7 +2923,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     
     await loadCacheFromIndexedDB().catch((e) => { console.warn("loadCacheFromIndexedDB falló:", e); });
 
-    mostrarSeccion("agregar");
+    mostrarSeccion("inicio");
     mostrarListasFirebase(true);
 
     if (firebaseOk && typeof startListasListener === "function") {
@@ -3336,6 +3338,9 @@ window.mostrarSeccion = function(id){
   const el = document.getElementById(id); 
   if (el) el.classList.remove("oculto");
 
+  // 👇 NUEVO: Subir la vista al inicio al cambiar de pantalla
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+  
   // cerrar menú si estaba abierto (UX móvil) y sincronizar ARIA
   const nav = document.getElementById("mainNav");
   const btn = document.getElementById("btnMenuToggle");
@@ -3881,6 +3886,126 @@ function placeInVerListas() {
   }
 })();
 
+/* ======= RENDER: PANTALLA DE INICIO (DASHBOARD) ======= */
+function renderInicio() {
+  const containerMensuales = document.getElementById("listaInicioMensuales");
+  const containerProximos = document.getElementById("listaInicioProximos");
+  const containerTotal = document.getElementById("totalMensualInicio");
+  
+  if (!containerMensuales || !containerProximos || !containerTotal) return;
+
+  let totalMensual = 0;
+  let mensuales = [];
+  let proximos = [];
+  const hoy = startOfDay(new Date());
+
+  // 1. Clasificar listas
+  Array.from(listasCache.values()).forEach(lista => {
+    const f = parseFechaFromString(lista.fecha);
+    const listTotal = (lista.productos || []).reduce((sum, p) => sum + (p.precio || 0), 0);
+
+    if (lista.pagoMensual) {
+      // Todos los pagos mensuales se suman y se muestran
+      mensuales.push(lista);
+      totalMensual += listTotal;
+    } else if (!lista.completada && !lista._notificacionDescartada) {
+      // Listas normales o eventos que sean de hoy o a futuro
+      if (f && startOfDay(f).getTime() >= hoy.getTime()) {
+        proximos.push(lista);
+      }
+    }
+  });
+
+  // 2. Ordenar por fecha (los más urgentes arriba)
+  mensuales.sort((a, b) => parseFechaFromString(a.fecha) - parseFechaFromString(b.fecha));
+  proximos.sort((a, b) => parseFechaFromString(a.fecha) - parseFechaFromString(b.fecha));
+
+  // 3. Imprimir el total mensual
+  containerTotal.textContent = `$${totalMensual.toFixed(2)}`;
+
+  // 4. Helper para dibujar cada elemento
+  const generarHTMLItem = (lista) => {
+    const dias = calcularDiasRestantes(parseFechaFromString(lista.fecha));
+    const colors = colorForDias(dias);
+    const listTotal = (lista.productos || []).reduce((sum, p) => sum + (p.precio || 0), 0).toFixed(2);
+    
+    const estadoTexto = dias === 0 ? "Vence hoy" : dias < 0 ? `Venció hace ${Math.abs(dias)} día(s)` : `Vence en ${dias} día(s)`;
+    const badge = lista.isEvento ? '<span style="color:#8b5cf6; font-size:0.85em; font-weight:bold; margin-left:6px;">🎉 EVENTO</span>' : '';
+
+    return `
+      <li class="lista-item resumen" style="border-left:6px solid ${colors.border}; margin-bottom:10px; cursor:pointer;" onclick="irAListaPorId('${lista.id}')">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; width:100%;">
+          <div style="flex:1; padding-right:10px;">
+             <div style="font-size:1.1em; font-weight:bold; color:#111827; line-height:1.2;">
+               ${escapeHtml(lista.lugar)} ${badge}
+             </div>
+             <div style="color:#6b7280; font-size:0.85em; margin-top:4px;">
+               📅 ${formatearFecha(lista.fecha)} — <span style="color:${colors.border}; font-weight:600;">${estadoTexto}</span>
+             </div>
+          </div>
+          <div style="text-align:right; white-space:nowrap;">
+             <div style="font-size:1.1em; font-weight:bold; color:#059669;">
+               $${listTotal}
+             </div>
+          </div>
+        </div>
+      </li>
+    `;
+  };
+
+  // 5. Inyectar al HTML
+  containerMensuales.innerHTML = mensuales.length 
+    ? mensuales.map(generarHTMLItem).join('') 
+    : '<li style="color:#6b7280; font-size:0.9em; padding: 10px;">No hay pagos mensuales registrados.</li>';
+
+  const proximosLimitados = proximos.slice(0, 5); // Mostrar solo las próximas 5
+  containerProximos.innerHTML = proximosLimitados.length
+    ? proximosLimitados.map(generarHTMLItem).join('')
+    : '<li style="color:#6b7280; font-size:0.9em; padding: 10px;">No hay listas o eventos próximos.</li>';
+}
+
+/* ======= MODO OSCURO (THEME TOGGLE) ACTUALIZADO ======= */
+function updateFlatpickrTheme(isDark) {
+  const flatpickrCss = document.getElementById('flatpickr-theme-css');
+  if (flatpickrCss) {
+    if (isDark) {
+      flatpickrCss.href = "https://cdn.jsdelivr.net/npm/flatpickr/dist/themes/dark.css";
+    } else {
+      flatpickrCss.href = "https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css";
+    }
+  }
+}
+
+function initTheme() {
+  const savedTheme = localStorage.getItem('listas_theme');
+  const btnIcon = document.querySelector('#btnThemeToggle i');
+  const isDark = savedTheme === 'dark' || (!savedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  
+  if (isDark) {
+    document.body.classList.add('dark-mode');
+    if(btnIcon) { btnIcon.classList.remove('fa-moon'); btnIcon.classList.add('fa-sun'); }
+  }
+  updateFlatpickrTheme(isDark); // <--- Actualiza calendario al iniciar
+}
+
+function toggleTheme() {
+  const isDark = document.body.classList.toggle('dark-mode');
+  const btnIcon = document.querySelector('#btnThemeToggle i');
+  
+  if (isDark) {
+    localStorage.setItem('listas_theme', 'dark');
+    if(btnIcon) { btnIcon.classList.remove('fa-moon'); btnIcon.classList.add('fa-sun'); }
+  } else {
+    localStorage.setItem('listas_theme', 'light');
+    if(btnIcon) { btnIcon.classList.remove('fa-sun'); btnIcon.classList.add('fa-moon'); }
+  }
+  updateFlatpickrTheme(isDark); // <--- Cambia calendario al presionar el botón
+}
+// Ejecutar al cargar la página para aplicar el color de inmediato
+initTheme();
+
+window.toggleTheme = toggleTheme;
+window.renderInicio = renderInicio;
 window.agregarProducto = agregarProducto;
 window.eliminarProducto = eliminarProducto;
 window.alternarDetalle = alternarDetalle;

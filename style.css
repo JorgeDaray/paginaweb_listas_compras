@@ -196,6 +196,16 @@ button[type="button"]:active, button[type="submit"]:active{ transform:translateY
   display:inline-block; margin-top:8px; padding:4px 8px; font-size:.9rem;
   border:1px solid #fbc02d; border-radius:8px; background: #fffaf0; color:#a16207;
 }
+.productos-detalle {
+  padding-left: 1.5rem; /* Empuja las viñetas hacia adentro */
+  margin-top: 12px; 
+  border-top: 1px solid var(--border); 
+  padding-top: 8px;
+}
+
+.productos-detalle li {
+  margin-bottom: 4px; /* Espacio entre cada producto para que respire */
+}
 
 /* ================= NOTIFICACIONES ================= */
 .notificacion-item{ list-style:none; margin-bottom:12px; }
@@ -371,13 +381,23 @@ button[type="button"]:active, button[type="submit"]:active{ transform:translateY
 }
 
 @media (max-width: 767px){
-  /* deja espacio al h1 para que no se pise con el botón */
+
   header h1{
-    padding-left: 44px; /* 40–48px funciona bien con tu botón */
+    padding-left: 44px;
+    padding-right: 44px; /* <--- Añade esto para evitar que choque con el botón de tema */
+    text-align: center;
   }
 
   /* (opcional) centra el título en móvil */
   header h1{ text-align: center; }
+
+  #navBackdrop {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.4);
+    z-index: 1100;
+  }
+  #navBackdrop.show { display: block; }
 }
 
 /* Botoneras agrupadas (acciones) */
@@ -491,3 +511,84 @@ button[type="button"]:active, button[type="submit"]:active{ transform:translateY
 .event-lila-ambar .date-box { background:#fff7ed; color:#92400e; }
 .event-lila-rojo  .date-box { background:#fef2f2; color:#7f1d1d; }
 
+/* ================= INICIO / DASHBOARD ================= */
+.tarjeta-resumen {
+  background: linear-gradient(135deg, var(--accent), var(--accent-600));
+  color: #fff;
+  padding: 24px 20px;
+  border-radius: 16px;
+  box-shadow: var(--shadow-md);
+  margin-bottom: 24px;
+  text-align: center;
+}
+.tarjeta-resumen .monto {
+  font-size: 2.8rem;
+  font-weight: 800;
+  margin: 8px 0;
+  letter-spacing: -0.5px;
+}
+.dashboard-seccion {
+  margin-bottom: 28px;
+}
+
+/* ================= MODO OSCURO (NIGHT MODE) ================= */
+body.dark-mode {
+  --bg: #111827;          /* Fondo muy oscuro */
+  --surface: #1f2937;     /* Superficie de tarjetas */
+  --text: #f3f4f6;        /* Texto claro */
+  --muted: #9ca3af;       /* Texto gris claro */
+  --border: #374151;      /* Bordes oscuros */
+  --border-2: #4b5563;
+  --accent: #60a5fa;      /* Azul claro */
+  --accent-600: #3b82f6;
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.5);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.5);
+}
+
+body.dark-mode h1, body.dark-mode h2, body.dark-mode h3 { color: var(--text); }
+body.dark-mode input, body.dark-mode select { background: #374151; color: var(--text); }
+body.dark-mode input::placeholder { color: #9ca3af; }
+
+/* Botones y navegacion en modo oscuro */
+body.dark-mode nav button, body.dark-mode .btn { background: #374151; color: var(--text); border-color: var(--border); }
+body.dark-mode nav button:hover, body.dark-mode .btn:hover { background: #4b5563; }
+body.dark-mode .eliminar-producto { background: #7f1d1d; color: #fca5a5; border-color: #991b1b; }
+
+/* Paneles y tarjetas */
+body.dark-mode .detalle-lista, body.dark-mode .productos { background: #111827; }
+body.dark-mode .badge-pendiente { background: #78350f; color: #fcd34d; border-color: #b45309; }
+body.dark-mode .segmented { background: #374151; }
+body.dark-mode .segmented .seg-btn { color: var(--text); }
+body.dark-mode .segmented .seg-btn.active { background: #1e3a8a; color: #bfdbfe; }
+body.dark-mode .sugerencias { background: #1f2937; }
+body.dark-mode .sugerencia-item:hover { background: #374151; }
+
+/* Alertas */
+body.dark-mode .msg-info { background:#1e3a8a; color:#bfdbfe; border-color:#2563eb; }
+body.dark-mode .msg-success { background:#064e3b; color:#a7f3d0; border-color:#059669; }
+body.dark-mode .msg-error { background:#7f1d1d; color:#fecaca; border-color:#dc2626; }
+
+/* TRUCO MAGICO: Invertir los colores que creaste directamente en el Javascript (inline-styles) */
+body.dark-mode [style*="color:#111"], 
+body.dark-mode [style*="color: #111"],
+body.dark-mode [style*="color:#374151"],
+body.dark-mode [style*="color:#2b2b38"] { color: #f3f4f6 !important; }
+
+body.dark-mode [style*="color:#059669"] { color: #34d399 !important; } /* Verde claro para precios */
+body.dark-mode [style*="color:#6b7280"], body.dark-mode [style*="color:#333"] { color: #9ca3af !important; }
+
+body.dark-mode [style*="background:#fff"], body.dark-mode [style*="background:#ffffff"] { background-color: var(--surface) !important; }
+body.dark-mode [style*="background:#f8fafc"] { background-color: #374151 !important; }
+
+/* Botones específicos */
+body.dark-mode .btn--primary { background: #1e3a8a !important; color: #bfdbfe !important; border-color: #1e3a8a !important; }
+body.dark-mode .btn--secondary { background: #374151 !important; color: #f1f5f9 !important; border-color: #4b5563 !important; }
+body.dark-mode .btn--danger { background: #7f1d1d !important; color: #fecaca !important; border-color: #7f1d1d !important; }
+body.dark-mode .btn--success { background: #064e3b !important; color: #a7f3d0 !important; border-color: #064e3b !important; }
+
+/* Tarjeta del Dashboard y Eventos */
+body.dark-mode .tarjeta-resumen { background: linear-gradient(135deg, #1e3a8a, #172554); }
+body.dark-mode .event-lila-verde .date-box { background: #064e3b; color: #6ee7b7; }
+body.dark-mode .event-lila-ambar .date-box { background: #78350f; color: #fcd34d; }
+body.dark-mode .event-lila-rojo .date-box { background: #7f1d1d; color: #fca5a5; }
+body.dark-mode .event-caducado .date-box { background: #374151; color: #9ca3af; }
