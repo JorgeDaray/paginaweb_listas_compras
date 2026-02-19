@@ -75,13 +75,29 @@
         <input type="text" id="lugar" placeholder="Lugar de compra" required />
         <input type="date" id="fecha" required />
         <label>
-          <input type="checkbox" id="esPagoMensual" />
-          ¿Es pago mensual?
-        </label>
-        <label>
-          <input type="checkbox" id="esEvento" />
-          ¿Es evento?
-        </label>        
+        <div class="opciones-lista">
+          <label class="toggle-btn">
+            <input type="checkbox" id="esPagoMensual" />
+            <span class="toggle-label"><i class="fas fa-calendar-alt"></i> Pago Mensual</span>
+          </label>
+          <label class="toggle-btn">
+            <input type="checkbox" id="esEvento" />
+            <span class="toggle-label"><i class="fas fa-glass-cheers"></i> Evento</span>
+          </label>
+        </div>
+        <div style="background: var(--surface); padding: 12px 16px; border-radius: 10px; border: 1px solid var(--border); margin: 12px 0; display: flex; justify-content: space-between; align-items: center; box-shadow: var(--shadow-sm);">
+          <span style="font-weight: 700; color: var(--muted); font-size: 1.1em;">Total acumulado:</span>
+          <span style="font-size: 1.5rem; font-weight: 800; color: var(--accent);">
+            $<span id="liveTotal">0.00</span>
+          </span>
+        </div>
+
+        <div style="margin-bottom: 12px;">
+          <button type="button" class="btn btn--primary" onclick="agregarProducto()" style="width: 100%; justify-content: center; padding: 12px;">
+            <i class="fas fa-plus"></i> Agregar otro producto
+          </button>
+        </div>
+
         <div id="productos">
           <div class="producto">
             <div class="inputs-container">
@@ -120,10 +136,10 @@
             </button>
           </div>
         </div>
-        <button type="button" onclick="agregarProducto()">
-          Agregar otro producto
+        
+        <button type="submit" class="btn btn--success" style="width: 100%; justify-content: center; padding: 14px; font-size: 1.1em; margin-top: 10px;">
+          <i class="fas fa-save"></i> Guardar Lista
         </button>
-        <button type="submit">Guardar Lista</button>
       </form>
     </section>
 

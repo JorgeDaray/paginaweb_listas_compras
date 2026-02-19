@@ -2445,6 +2445,7 @@ async function editarLista(id) {
     });
     mostrarSeccion("agregar");
     window.scrollTo(0,0);
+    actualizarTotalLive(); // <--- NUEVO: Calcular total al abrir
   } catch(e){ mostrarMensaje("Error al cargar la lista: " + e.message, "error"); console.error(e); }
 }
 
@@ -2574,6 +2575,7 @@ if (hayError || productos.length === 0) return;
       <button type="button" class="eliminar-producto" onclick="eliminarProducto(this)">❌</button>
     </div>`;
   mostrarListasFirebase(true);
+  actualizarTotalLive(); // <--- NUEVO: Reiniciar a cero tras guardar
 });
 
 /* ======= SENCILLOS: agregar/eliminar producto y exposicion global ======= */
@@ -2593,9 +2595,21 @@ function agregarProducto() {
     </div>
     <button type="button" class="eliminar-producto" onclick="eliminarProducto(this)">❌</button>
   `;
-  contenedor.appendChild(div);
+  // 👇 CAMBIAMOS appendChild POR prepend PARA QUE APAREZCA ARRIBA
+  contenedor.prepend(div); 
+  
+  // Opcional UX: Hacer focus automático en el nuevo input para escribir de inmediato
+  setTimeout(() => div.querySelector('.producto-nombre').focus(), 50);
+  actualizarTotalLive();
 }
-function eliminarProducto(boton) { const divProducto = boton.parentElement; if (divProducto) divProducto.remove(); }
+
+function eliminarProducto(boton) { 
+  const divProducto = boton.parentElement; 
+  if (divProducto) {
+    divProducto.remove(); 
+    actualizarTotalLive(); // Actualizar total al borrar
+  }
+}
 
 /* ======= SYNC ONLINE/OFFLINE: procesar colas pendientes al reconectar (mejor mapeo tmp_ => real id) ======= */
 // bandera para evitar loops en onSnapshot / re-procesos masivos
@@ -2844,6 +2858,7 @@ document.addEventListener("visibilitychange", () => {
     const el = e.target;
     if (!el.classList || !el.classList.contains('producto-precio')) return;
     if (el.value.includes(',')) el.value = el.value.replace(/,/g, '.');
+    actualizarTotalLive(); // <--- NUEVO
   });
 
   // Formatea a 2 decimales al salir del campo
@@ -2854,6 +2869,7 @@ document.addEventListener("visibilitychange", () => {
     if (v === '') return;
     const n = Number(v);
     if (!Number.isNaN(n)) el.value = n.toFixed(2);
+    actualizarTotalLive(); // <--- NUEVO
   }, true);
 
   // Evita notación exponencial y signos
@@ -3917,6 +3933,19 @@ function compartirPorWhatsApp(id) {
   window.open(url, '_blank');
 }
 
+/* ======= TOTAL EN VIVO (Formulario) ======= */
+function actualizarTotalLive() {
+  const precios = document.querySelectorAll('#productos .producto-precio');
+  let total = 0;
+  precios.forEach(input => {
+    const val = parseFloat(input.value.replace(',', '.'));
+    if (!isNaN(val)) total += val;
+  });
+  const liveTotalEl = document.getElementById('liveTotal');
+  if (liveTotalEl) liveTotalEl.textContent = total.toFixed(2);
+}
+
+window.actualizarTotalLive = actualizarTotalLive;
 window.compartirPorWhatsApp = compartirPorWhatsApp;
 window.toggleTheme = toggleTheme;
 window.renderInicio = renderInicio;
