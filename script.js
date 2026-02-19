@@ -1332,11 +1332,10 @@ function renderListaNotificaciones(pendientes) {
          <i class="fa-solid fa-calendar-plus" aria-hidden="true"></i> Añadir a Google Calendar
       </a>`;
 
-   const icsBtnHTML =
-     `<button type="button"
-              class="btn btn--secondary btn-download-ics"
-              data-lista-id="${escapeHtml(lista.id)}">
-        <i class="fa-solid fa-file-arrow-down" aria-hidden="true"></i> Descargar .ics
+// 👇 REEMPLAZAMOS EL .ICS POR EL DE WHATSAPP 👇
+   const whatsAppBtnHTML = 
+     `<button type="button" class="btn btn--success" onclick="compartirPorWhatsApp('${lista.id}')" style="background:#25D366; color:#fff; border-color:#25D366;">
+        <i class="fab fa-whatsapp"></i> Enviar
       </button>`;
 
    const btnHechoHTML =
@@ -1363,14 +1362,15 @@ function renderListaNotificaciones(pendientes) {
     const detalleProductosHTML = `
       <div class="detalle-productos oculto" id="detalle-productos-${lista.id}" style="margin-top:8px; padding:8px; border-radius:6px; border:1px solid #eee; background:#fff;">
         <strong>Productos:</strong>
-        <ul style="margin-top:6px;">${productosHTML || "<li>(sin productos)</li>"}</ul>
+        <ul class="productos-detalle" style="margin-top:6px;">${productosHTML || "<li>(sin productos)</li>"}</ul>
       </div>
     `;
 
+// 👇 Y AQUÍ QUITAMOS EL ICS Y PONEMOS WHATSAPP 👇
     const accionesHTML = `
     <div class="acciones-lista acciones-grid-2x2 oculto" id="acciones-${lista.id}" style="margin-top:8px;">
       ${calendarBtnHTML}
-      ${icsBtnHTML}
+      ${whatsAppBtnHTML}
       <button class="btn btn--success accion-marcar" data-id="${lista.id}">
         <i class="fa-solid fa-check" aria-hidden="true"></i> Marcar como hecha
       </button>
@@ -1378,7 +1378,7 @@ function renderListaNotificaciones(pendientes) {
         <i class="fa-solid fa-ban" aria-hidden="true"></i> Descartar
       </button>
     </div>
-  `;  
+  `;
     li.innerHTML = resumenHTML + detalleProductosHTML + accionesHTML;
 
     li.addEventListener("click", (e) => {
@@ -1650,12 +1650,11 @@ function renderEvents(eventos) {
         <i class="fa-solid fa-calendar-plus" aria-hidden="true"></i> Añadir a Google Calendar
      </a>`;
   
-  const icsBtnHTML =
-    `<button type="button"
-            class="btn btn--secondary btn-download-ics"
-            data-lista-id="${escapeHtml(lista.id)}">
-       <i class="fa-solid fa-file-arrow-down" aria-hidden="true"></i> Descargar .ics
-     </button>`;
+// 👇 REEMPLAZAMOS EL .ICS POR WHATSAPP 👇
+  const whatsAppBtnHTML = 
+     `<button type="button" class="btn btn--success" onclick="compartirPorWhatsApp('${lista.id}')" style="background:#25D366; color:#fff; border-color:#25D366;">
+        <i class="fab fa-whatsapp"></i> Enviar
+      </button>`;
   
   /* 👇 cambia a botón verde */
   const btnHechoHTML =
@@ -1691,12 +1690,12 @@ function renderEvents(eventos) {
     <!-- 👇 nueva cuadrícula 2×2 -->
     <div class="acciones-lista acciones-eventos">
       ${calendarBtnHTML}
-      ${icsBtnHTML}
-      ${btnHechoHTML /* ya lo tienes en verde con .btn--success */}
+      ${whatsAppBtnHTML}
+      ${btnHechoHTML}
       ${btnDescartarHTML}
     </div>
 
-    <ul style="margin-top:8px;">
+    <ul class="productos-detalle" style="margin-top:8px;">
       ${(Array.isArray(lista.productos) && lista.productos.length)
         ? lista.productos.map(p => `<li>${escapeHtml(p.nombre)} — $${(p.precio||0).toFixed(2)}${p.descripcion ? ` — ${escapeHtml(p.descripcion)}` : ''}</li>`).join('')
         : '<li>(sin productos)</li>'}
@@ -1746,13 +1745,6 @@ function renderEvents(eventos) {
       const ok = confirm("¿Deseas descartar este evento? Podrás reactivarlo editando la lista.");
       if (!ok) return;
       await descartarNotificacion(id);
-    }));
-    li.querySelectorAll(".btn-download-ics").forEach(btn => btn.addEventListener("click", (ev) => {
-      ev.stopPropagation();
-      const id = btn.getAttribute('data-lista-id');
-      const listaCache = listasCache.get(id);
-      if (listaCache) descargarICS(listaCache, { hour: NOTIFY_HOUR || 9, durationMinutes: 60 });
-      else mostrarMensaje("Lista no disponible para generar .ics", "error");
     }));
 
     ul.appendChild(li);
@@ -2081,12 +2073,11 @@ function mostrarListasDesdeCache(resetCount = false, soloPendientes = false) {
             <i class="fa-solid fa-calendar-plus" aria-hidden="true"></i> Calendar
         </a>`;
 
-      const icsBtnHTML =
-        `<button type="button"
-                class="btn btn--secondary btn-download-ics"
-                data-lista-id="${escapeHtml(lista.id)}">
-            <i class="fa-solid fa-file-arrow-down" aria-hidden="true"></i> .ics
-        </button>`;
+        // 👇 BOTÓN WHATSAPP NUEVO
+      const whatsAppBtnHTML = 
+        `<button class="btn btn--success" onclick="compartirPorWhatsApp('${lista.id}')" style="background:#25D366; color:#fff; border-color:#25D366;">
+           <i class="fab fa-whatsapp"></i> Enviar
+         </button>`;
 
       // HTML del Resumen (DISEÑO FLOTANTE RECUPERADO)
       // Usamos flexbox con justify-content: space-between para separar Lugar/Fecha del Precio
@@ -2129,7 +2120,7 @@ function mostrarListasDesdeCache(resetCount = false, soloPendientes = false) {
         <div class="detalle-lista oculto">
           <div class="acciones-lista acciones-grid-2x2">
             ${calendarBtnHTML}
-            ${icsBtnHTML}
+            ${whatsAppBtnHTML}
             <button class="btn btn--ghost" onclick="editarLista('${lista.id}')">
               <i class="fa-solid fa-pen-to-square" aria-hidden="true"></i> Editar
             </button>
@@ -2246,11 +2237,11 @@ function alternarDetalle(resumenEl){
   
         const item = document.createElement("li");
         item.innerHTML = `
-          <h3 style="display:flex; justify-content:space-between; align-items:center;">
+        <h3 style="display:flex; justify-content:space-between; align-items:center;">
             <span>🛍️ ${escapeHtml(lista.lugar)} — 📅 ${formatearFecha(lista.fecha)}</span>
             <small style="color:#6b7280;">${productosFiltrados.length} producto(s)</small>
           </h3>
-          <ul id="product-list-${lista.id}" style="margin-top:6px;">
+          <ul id="product-list-${lista.id}" class="productos-detalle" style="margin-top:6px;">
             ${productosHTML}
             ${extrasHTML}
           </ul>
@@ -3074,41 +3065,6 @@ document.addEventListener("DOMContentLoaded", async () => {
       }
     });
 
-    // Delegación para botones .ics — pegar dentro de DOMContentLoaded o al final del archivo
-    document.addEventListener('click', (e) => {
-      const btn = e.target.closest && e.target.closest('.btn-download-ics');
-      if (!btn) return;
-      const listaId = btn.getAttribute('data-lista-id');
-      if (!listaId) return;
-
-      // Intentar obtener la lista desde cache
-      const lista = listasCache.get(listaId);
-      if (lista) {
-        descargarICS(lista);
-        return;
-      }
-
-      // Si no está en cache, intentar desde Firestore si está disponible
-      if (navigator.onLine && canUseFirestore()) {
-        (async () => {
-          try {
-            const d = await getDoc(doc(db, "listas", listaId));
-            if (d.exists()) {
-              descargarICS({ id: d.id, ...d.data() });
-            } else {
-              mostrarMensaje("Lista no encontrada para generar .ics", "error");
-            }
-          } catch (err) {
-            console.error("Error obteniendo lista para .ics:", err);
-            mostrarMensaje("No se pudo generar el .ics (error servidor).", "error");
-          }
-        })();
-        return;
-      }
-
-      mostrarMensaje("Lista no disponible localmente para generar .ics", "error");
-    });
-
     // === Toggle menú (móvil off-canvas + backdrop) ===
     const btnMenu = document.getElementById('btnMenuToggle');
     const navMain = document.getElementById('mainNav');
@@ -3256,80 +3212,6 @@ if ("serviceWorker" in navigator) {
       .then((reg) => console.log("SW registrado:", reg.scope))
       .catch((err) => console.warn("SW error:", err));
   });
-}
-
-// Generar contenido .ics con hora (usa NOTIFY_HOUR por defecto, duración 1h)
-function generarContenidoICS(lista, opts = {}) {
-  if (!lista || !lista.fecha) return null;
-  const dtStartDate = parseFechaFromString(lista.fecha);
-  if (!dtStartDate || isNaN(dtStartDate)) return null;
-
-  const hour = (typeof opts.hour === 'number') ? opts.hour : (typeof NOTIFY_HOUR === 'number' ? NOTIFY_HOUR : 9);
-  const durationMinutes = Number(opts.durationMinutes || 60); // duración por defecto 1 hora
-
-  // inicio en la hora local indicada
-  const startLocal = dateAtHour(dtStartDate, hour);
-  const endLocal = new Date(startLocal.getTime() + durationMinutes * 60000); // duración en milisegundos
-
-  function pad(n){ return String(n).padStart(2,'0'); }
-  function toICSDatetimeUTC(d){
-    // 20250815T090000Z
-    return d.toISOString().replace(/[-:]/g,'').split('.')[0] + 'Z';
-  }
-
-  const start = toICSDatetimeUTC(startLocal);
-  const end = toICSDatetimeUTC(endLocal);
-
-  const title = (lista.lugar && lista.lugar.trim()) ? `Lista: ${lista.lugar.trim()}` : 'Lista de Compras';
-  const description = (Array.isArray(lista.productos) && lista.productos.length)
-    ? lista.productos.map(p => `${p.nombre} — $${Number(p.precio||0).toFixed(2)}${p.descripcion ? ` (${p.descripcion})` : ''}`).join('\n')
-    : 'Sin productos detallados';
-  const location = lista.lugar ? lista.lugar.replace(/\r?\n/g, ' ') : '';
-  const uid = `lista-${lista.id || generateClientId()}@miapp`;
-
-  const icsLines = [
-    'BEGIN:VCALENDAR',
-    'VERSION:2.0',
-    'PRODID:-//MiApp//Listas//ES',
-    'CALSCALE:GREGORIAN',
-    'BEGIN:VEVENT',
-    `UID:${uid}`,
-    `DTSTAMP:${toICSDatetimeUTC(new Date())}`,
-    `DTSTART:${start}`,
-    `DTEND:${end}`,
-    `SUMMARY:${escapeICSText(title)}`,
-    `DESCRIPTION:${escapeICSText(description)}`,
-    `LOCATION:${escapeICSText(location)}`,
-    'END:VEVENT',
-    'END:VCALENDAR'
-  ];
-  return icsLines.join('\r\n');
-}
-
-function escapeICSText(s) {
-  if (!s) return '';
-  return String(s).replace(/\\/g,'\\\\').replace(/;/g,'\\;').replace(/,/g,'\\,').replace(/\r?\n/g,'\\n');
-}
-
-// Crea y descarga el .ics en el navegador (acepta opts que se pasan a generarContenidoICS)
-function descargarICS(lista, opts = {}) {
-  const contenido = generarContenidoICS(lista, opts);
-  if (!contenido) { mostrarMensaje("No se pudo generar el archivo .ics para esta lista.", "error"); return; }
-  const blob = new Blob([contenido], { type: 'text/calendar;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  const safeName = (lista.lugar || 'lista')
-  .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
-  .replace(/[^a-zA-Z0-9_-]+/g,'_')
-  .slice(0,40);
-  const datePart = formatDateToInput(parseFechaFromString(lista.fecha)) || '';
-  const nombre = `${safeName}_${datePart}.ics`;
-  a.href = url;
-  a.download = nombre;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
 
 /* === 1) mostrarSeccion: cierra el menú móvil y sincroniza ARIA === */
@@ -4004,6 +3886,38 @@ function toggleTheme() {
 // Ejecutar al cargar la página para aplicar el color de inmediato
 initTheme();
 
+/* ======= COMPARTIR POR WHATSAPP ======= */
+function compartirPorWhatsApp(id) {
+  const lista = listasCache.get(id);
+  if (!lista) return mostrarMensaje("No se encontró la lista.", "error");
+
+  // 1. Título y fecha
+  let mensaje = `🛒 *${lista.lugar || "Lista de Compras"}*\n`;
+  mensaje += `📅 ${formatearFecha(lista.fecha)}\n\n`;
+
+  // 2. Productos
+  if (Array.isArray(lista.productos) && lista.productos.length > 0) {
+    lista.productos.forEach(p => {
+      // Formato: "- Producto ($Precio) nota"
+      const precioStr = p.precio > 0 ? ` ($${Number(p.precio).toFixed(2)})` : "";
+      const descStr = p.descripcion ? ` _${p.descripcion}_` : "";
+      // Usamos un check ✅ si está "tachado" (aunque aquí no guardamos estado individual, simulamos viñeta)
+      mensaje += `▫️ ${p.nombre}${precioStr}${descStr}\n`;
+    });
+  } else {
+    mensaje += "_Sin productos_\n";
+  }
+
+  // 3. Total
+  const total = (lista.productos || []).reduce((s, p) => s + (Number(p.precio) || 0), 0);
+  mensaje += `\n💰 *Total: $${total.toFixed(2)}*`;
+
+  // 4. Crear Link
+  const url = `https://wa.me/?text=${encodeURIComponent(mensaje)}`;
+  window.open(url, '_blank');
+}
+
+window.compartirPorWhatsApp = compartirPorWhatsApp;
 window.toggleTheme = toggleTheme;
 window.renderInicio = renderInicio;
 window.agregarProducto = agregarProducto;
