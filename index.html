@@ -63,6 +63,9 @@
       <button id="btnEventos" onclick="mostrarSeccion('eventos')" aria-label="Eventos">
         <i class="fas fa-calendar-day" aria-hidden="true"></i> Eventos
       </button>
+      <button id="btnVincular" onclick="vincularCuenta()" aria-label="Vincular Cuenta">
+        <i class="fas fa-user-friends" aria-hidden="true"></i> Vincular Pareja
+      </button>
     </nav>
   </header>
   <main>
@@ -92,7 +95,6 @@
         <input type="hidden" id="idListaEditando" />
         <input type="text" id="lugar" placeholder="Lugar de compra" required />
         <input type="date" id="fecha" required />
-        <label>
         <div class="opciones-lista">
           <label class="toggle-btn">
             <input type="checkbox" id="esPagoMensual" />

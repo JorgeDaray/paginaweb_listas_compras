@@ -2575,8 +2575,13 @@ if (hayError || productos.length === 0) return;
       }
     } catch(e){ mostrarMensaje("Error actualizando la lista: " + e.message, "error"); console.error(e); }
   } else {
-    // 👇 PONLO AQUÍ: Solo se añade el dueño cuando se crea una lista nueva 👇
-    datos.accessList = [miCorreo];
+    // 👇 AÑADE AUTOMÁTICAMENTE AL COMPAÑERO SI ESTÁ VINCULADO 👇
+    const correoPareja = localStorage.getItem("correoPareja");
+    if (correoPareja) {
+      datos.accessList = [miCorreo, correoPareja]; // Los pone a los dos
+    } else {
+      datos.accessList = [miCorreo]; // Solo a ti
+    }
     await guardarLista({ ...datos, _notificacionDescartada: false });
   }
 
@@ -4075,7 +4080,26 @@ async function compartirListaConEmail(id) {
   }
 }
 
+/* ======= VINCULAR CUENTA AUTOMÁTICA ======= */
+function vincularCuenta() {
+  const actual = localStorage.getItem("correoPareja") || "";
+  const email = prompt("Ingresa el correo de tu pareja. Todas tus listas nuevas se compartirán automáticamente con esta persona:", actual);
+  
+  if (email === null) return; // Si le da a cancelar, no hace nada
+  
+  if (email.trim() === "") {
+    localStorage.removeItem("correoPareja");
+    mostrarMensaje("Vinculación automática desactivada", "info");
+  } else if (email.includes('@')) {
+    localStorage.setItem("correoPareja", email.trim().toLowerCase());
+    mostrarMensaje(`¡Cuentas vinculadas! Ahora compartes todo con ${email}`, "success");
+  } else {
+    mostrarMensaje("Correo no válido", "error");
+  }
+}
+
 // Exponer globalmente
+window.vincularCuenta = vincularCuenta;
 window.compartirListaConEmail = compartirListaConEmail;
 window.actualizarSugerenciasLugares = actualizarSugerenciasLugares;
 window.loginConGoogle = loginConGoogle;
