@@ -51,7 +51,12 @@ export const leaderElectionReady = new Promise((resolve) => {
 let initializeApp, getAnalytics, initializeFirestore,
     collection, addDoc, query, orderBy, limit, deleteDoc,
     doc, updateDoc, serverTimestamp, getDoc, onSnapshot,
-    writeBatch, getDocs;
+    writeBatch, getDocs, where, arrayUnion;
+
+// 👇 NUEVAS variables para Auth 👇
+let getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged;
+let auth = null;
+export let currentUser = null; // Guardará la info del usuario activo
 
 // refs a helpers de la nueva caché
 let persistentLocalCache, persistentMultipleTabManager, memoryLocalCache;
@@ -68,6 +73,8 @@ async function initFirebase() {
     const modApp       = await import("https://www.gstatic.com/firebasejs/12.0.0/firebase-app.js");
     const modAnalytics = await import("https://www.gstatic.com/firebasejs/12.0.0/firebase-analytics.js");
     const modFirestore = await import("https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js");
+    // 👇 NUEVA IMPORTACIÓN DE AUTH 👇
+    const modAuth      = await import("https://www.gstatic.com/firebasejs/12.0.0/firebase-auth.js");
 
     // APIs que usas en el resto del código
     initializeApp     = modApp.initializeApp;
@@ -93,10 +100,21 @@ async function initFirebase() {
     persistentLocalCache        = modFirestore.persistentLocalCache;
     persistentMultipleTabManager= modFirestore.persistentMultipleTabManager;
     memoryLocalCache            = modFirestore.memoryLocalCache;
+    // 👇 ASIGNAR FUNCIONES DE AUTH 👇
+    getAuth            = modAuth.getAuth;
+    signInWithPopup    = modAuth.signInWithPopup;
+    GoogleAuthProvider = modAuth.GoogleAuthProvider;
+    signOut            = modAuth.signOut;
+    onAuthStateChanged = modAuth.onAuthStateChanged;
+    where             = modFirestore.where;       // <--- NUEVO
+    arrayUnion        = modFirestore.arrayUnion;  // <--- NUEVO
 
     // Inicializa app y analytics
     const app = initializeApp(firebaseConfig);
     try { analytics = getAnalytics(app); } catch {}
+    // 👇 INICIALIZAR AUTH 👇
+    auth = getAuth(app);
+    iniciarEscuchaAuth(); // Inicia el observador de sesión
 
     // ✅ Caché persistente con sincronización multi-tab (sin enableIndexedDbPersistence)
     try {
@@ -2118,9 +2136,11 @@ function mostrarListasDesdeCache(resetCount = false, soloPendientes = false) {
 
       const detalleHTML = `
         <div class="detalle-lista oculto">
-          <div class="acciones-lista acciones-grid-2x2">
-            ${calendarBtnHTML}
+          <div class="acciones-lista"> ${calendarBtnHTML}
             ${whatsAppBtnHTML}
+            <button class="btn btn--primary" onclick="compartirListaConEmail('${lista.id}')" style="background:#4f46e5; border-color:#4f46e5; color:#fff;">
+              <i class="fa-solid fa-user-plus" aria-hidden="true"></i> Compartir
+            </button>
             <button class="btn btn--ghost" onclick="editarLista('${lista.id}')">
               <i class="fa-solid fa-pen-to-square" aria-hidden="true"></i> Editar
             </button>
@@ -2152,6 +2172,7 @@ function mostrarListasDesdeCache(resetCount = false, soloPendientes = false) {
         }
       }
     }
+    actualizarSugerenciasLugares();
     actualizarNotificaciones();
 
   } catch (e) {
@@ -2498,6 +2519,7 @@ if (hayError || productos.length === 0) return;
     mostrarMensaje('No puedes marcar "Pago mensual" y "Evento" a la vez.', 'error');
     return;
   }
+  const miCorreo = currentUser ? currentUser.email : "local";
   const datos = { lugar, fecha: fechaInput, productos, estado, pagoMensual: esPagoMensual, isEvento: esEvento };
 
   const reactivarCheckbox = document.getElementById('reactivarNotifs');
@@ -2553,6 +2575,8 @@ if (hayError || productos.length === 0) return;
       }
     } catch(e){ mostrarMensaje("Error actualizando la lista: " + e.message, "error"); console.error(e); }
   } else {
+    // 👇 PONLO AQUÍ: Solo se añade el dueño cuando se crea una lista nueva 👇
+    datos.accessList = [miCorreo];
     await guardarLista({ ...datos, _notificacionDescartada: false });
   }
 
@@ -2779,10 +2803,14 @@ async function startListasListener() {
   if (listasListenerUnsubscribe) return;
 
   try {
-    // OPTIMIZACIÓN: Ordenar por fecha desciende ayuda al indexado interno
-    // NOTA: Si en el futuro quieres ahorrar más lecturas, puedes agregar limit(100) aquí,
-    // pero eso ocultaría las listas muy antiguas en el buscador.
-    const q = query(collection(db, "listas"), orderBy("fecha", "desc"));
+    // Si no hay usuario logueado, no descargamos nada de la nube
+    if (!currentUser || !currentUser.email) return;
+
+    // MAGIA DE PRIVACIDAD: Solo trae las listas donde tu correo esté en la lista de acceso
+    const q = query(
+      collection(db, "listas"), 
+      where("accessList", "array-contains", currentUser.email)
+    );
 
     listasListenerUnsubscribe = onSnapshot(
       q,
@@ -3369,6 +3397,7 @@ window.importarJSON = async function (file, { mode = 'merge', pushToCloud = true
       })) : [];
       if (typeof x._notificacionDescartada !== 'boolean') x._notificacionDescartada = false;
       if (typeof x.completada !== 'boolean') x.completada = false;
+      x.accessList = [currentUser?.email || 'local'];
       return x;
     });
 
@@ -3945,6 +3974,112 @@ function actualizarTotalLive() {
   if (liveTotalEl) liveTotalEl.textContent = total.toFixed(2);
 }
 
+/* ======= AUTENTICACIÓN CON GOOGLE ======= */
+function iniciarEscuchaAuth() {
+  if (!auth) return;
+  
+  onAuthStateChanged(auth, async (user) => {
+    const prevUser = currentUser;
+    currentUser = user;
+    const btnLogin = document.getElementById("btnLogin");
+    const btnLogout = document.getElementById("btnLogout");
+    const userAvatar = document.getElementById("userAvatar");
+
+    if (user) {
+      btnLogin.style.display = "none";
+      btnLogout.style.display = "inline-flex";
+      userAvatar.src = user.photoURL;
+      userAvatar.style.display = "block";
+      mostrarMensaje(`Hola, ${user.displayName.split(' ')[0]} 👋`, "success");
+      
+      // Reiniciar conexión para traer solo sus listas
+      stopListasListener();
+      startListasListener();
+    } else {
+      btnLogin.style.display = "inline-flex";
+      btnLogout.style.display = "none";
+      userAvatar.style.display = "none";
+      
+      // Si el usuario le dio a "Salir", borrar todos los datos locales privados
+      if (prevUser) {
+        stopListasListener();
+        listasCache.clear();
+        await saveAllToIndexedDB([]);
+        mostrarListasFirebase(true);
+      }
+    }
+  });
+}
+
+async function loginConGoogle() {
+  if (!auth) return mostrarMensaje("Conectando con el servidor...", "info");
+  try {
+    const provider = new GoogleAuthProvider();
+    await signInWithPopup(auth, provider);
+  } catch (error) {
+    console.error("Error login:", error);
+    mostrarMensaje("No se pudo iniciar sesión", "error");
+  }
+}
+
+async function logout() {
+  if (!auth) return;
+  try {
+    await signOut(auth);
+    mostrarMensaje("Sesión cerrada", "info");
+  } catch (error) {
+    console.error("Error logout:", error);
+  }
+}
+
+/* ======= AUTOCOMPLETADO DE LUGARES ======= */
+function actualizarSugerenciasLugares() {
+  const dl = document.getElementById("listaLugares");
+  if (!dl) return;
+  const lugaresGuardados = new Set();
+  
+  // Extraer nombres únicos de lugares
+  listasCache.forEach(lista => {
+    if (lista.lugar && lista.lugar.trim() !== "") {
+      lugaresGuardados.add(lista.lugar.trim());
+    }
+  });
+
+  // Llenar el datalist
+  dl.innerHTML = "";
+  lugaresGuardados.forEach(lugar => {
+    const option = document.createElement("option");
+    option.value = lugar;
+    dl.appendChild(option);
+  });
+}
+
+/* ======= COMPARTIR LISTA CON OTRO USUARIO ======= */
+async function compartirListaConEmail(id) {
+  if (!currentUser) return mostrarMensaje("Debes iniciar sesión para compartir", "error");
+  if (!navigator.onLine || !canUseFirestore()) return mostrarMensaje("Necesitas internet para compartir", "offline");
+
+  const emailAmigo = prompt("Ingresa el correo de Google de la persona con la que quieres compartir esta lista:");
+  if (!emailAmigo || !emailAmigo.includes('@')) return;
+
+  try {
+    const docRef = doc(db, "listas", id);
+    // arrayUnion añade el correo sin borrar los que ya están
+    await updateDoc(docRef, {
+      accessList: arrayUnion(emailAmigo.trim().toLowerCase())
+    });
+    mostrarMensaje(`¡Lista compartida con ${emailAmigo}!`, "success");
+  } catch (e) {
+    console.error(e);
+    mostrarMensaje("Error al compartir la lista", "error");
+  }
+}
+
+// Exponer globalmente
+window.compartirListaConEmail = compartirListaConEmail;
+window.actualizarSugerenciasLugares = actualizarSugerenciasLugares;
+window.loginConGoogle = loginConGoogle;
+window.logout = logout;
 window.actualizarTotalLive = actualizarTotalLive;
 window.compartirPorWhatsApp = compartirPorWhatsApp;
 window.toggleTheme = toggleTheme;
