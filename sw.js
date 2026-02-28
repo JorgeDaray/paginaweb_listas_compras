@@ -1,5 +1,5 @@
 /* sw.js - FIX: no devolver index.html para scripts (evitar MIME error) */
-const CACHE = "mi-cache-v7";
+const CACHE = "mi-cache-v8";
 const RUNTIME = "runtime-cache-v1";
 const MAX_RUNTIME_ENTRIES = 200;
 

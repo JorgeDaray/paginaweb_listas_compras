@@ -659,3 +659,57 @@ body.dark-mode .event-lila-verde .date-box { background: #064e3b; color: #6ee7b7
 body.dark-mode .event-lila-ambar .date-box { background: #78350f; color: #fcd34d; }
 body.dark-mode .event-lila-rojo .date-box { background: #7f1d1d; color: #fca5a5; }
 body.dark-mode .event-caducado .date-box { background: #374151; color: #9ca3af; }
+
+/* ================= MEJORA DEL ENCABEZADO (HEADER) ================= */
+.header-top-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  gap: 10px;
+}
+.header-title-box {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.header-actions-box {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.auth-container {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Resetear estilos viejos que causaban el choque */
+header h1 { 
+  margin: 0 !important; 
+  padding: 0 !important; 
+  text-align: left !important; 
+}
+#btnMenuToggle { 
+  position: static !important; 
+  margin: 0 !important; 
+}
+#btnThemeToggle { 
+  position: static !important; 
+  background: transparent; 
+  border: none; 
+  font-size: 1.4rem; 
+  color: var(--accent); 
+  cursor: pointer; 
+  padding: 4px; 
+}
+
+/* Ajuste para pantallas de celular normales */
+@media (max-width: 767px) {
+  header h1 { font-size: 1.3rem !important; }
+}
+
+/* En celulares MUY pequeños, ocultar texto "Entrar" y dejar solo la "G" de Google */
+@media (max-width: 400px) {
+  .texto-entrar { display: none; }
+}

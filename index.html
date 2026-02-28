@@ -17,26 +17,33 @@
   <div id="navBackdrop" class="oculto"></div>
 
 <header>
-    <button id="btnMenuToggle" aria-label="Abrir menú" title="Menú" aria-controls="mainNav" aria-expanded="false">
-      <i class="fas fa-bars" aria-hidden="true"></i>
-    </button>    
-    
-    <h1>Mi Lista de Compras</h1>
-    
-    <div id="authContainer" style="position: absolute; right: 50px; top: 12px; display: flex; align-items: center; gap: 10px;">
-      <img id="userAvatar" src="" alt="Avatar" style="width: 32px; height: 32px; border-radius: 50%; display: none; border: 2px solid var(--accent);">
-      <button id="btnLogin" class="btn btn--primary" onclick="loginConGoogle()" style="padding: 6px 12px; font-size: 0.9em; border-radius: 20px;">
-        <i class="fab fa-google"></i> Entrar
-      </button>
-      <button id="btnLogout" class="btn btn--secondary" onclick="logout()" style="padding: 6px 12px; font-size: 0.9em; display: none; border-radius: 20px;">
-        Salir
-      </button>
+    <div class="header-top-bar">
+      
+      <div class="header-title-box">
+        <button id="btnMenuToggle" aria-label="Abrir menú" title="Menú" aria-controls="mainNav" aria-expanded="false">
+          <i class="fas fa-bars" aria-hidden="true"></i>
+        </button>    
+        <h1>Mi Lista de Compras</h1>
+      </div>
+      
+      <div class="header-actions-box">
+        <div id="authContainer" class="auth-container">
+          <img id="userAvatar" src="" alt="Avatar" style="width: 32px; height: 32px; border-radius: 50%; display: none; border: 2px solid var(--accent);">
+          <button id="btnLogin" class="btn btn--primary" onclick="loginConGoogle()" style="padding: 6px 12px; font-size: 0.9em; border-radius: 20px;">
+            <i class="fab fa-google"></i> <span class="texto-entrar">Entrar</span>
+          </button>
+          <button id="btnLogout" class="btn btn--secondary" onclick="logout()" style="padding: 6px 12px; font-size: 0.9em; display: none; border-radius: 20px;">
+            Salir
+          </button>
+        </div>
+        
+        <button id="btnThemeToggle" onclick="toggleTheme()" aria-label="Alternar tema" title="Cambiar tema">
+          <i class="fas fa-moon" aria-hidden="true"></i>
+        </button>
+      </div>
+
     </div>
-    
-    <button id="btnThemeToggle" onclick="toggleTheme()" aria-label="Alternar tema" title="Cambiar tema" style="position: absolute; right: 12px; top: 12px; background: transparent; border: none; font-size: 1.4rem; color: var(--accent); cursor: pointer; padding: 8px;">
-      <i class="fas fa-moon" aria-hidden="true"></i>
-    </button>
-    
+
     <nav role="navigation" aria-label="Menú principal" id="mainNav">
       <button id="btnInicio" onclick="mostrarSeccion('inicio')" aria-label="Inicio">
         <i class="fas fa-home" aria-hidden="true"></i> Inicio
