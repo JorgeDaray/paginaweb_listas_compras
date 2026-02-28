@@ -2136,7 +2136,8 @@ function mostrarListasDesdeCache(resetCount = false, soloPendientes = false) {
 
       const detalleHTML = `
         <div class="detalle-lista oculto">
-          <div class="acciones-lista"> ${calendarBtnHTML}
+          <div class="acciones-lista"> 
+            ${calendarBtnHTML}
             ${whatsAppBtnHTML}
             <button class="btn btn--primary" onclick="compartirListaConEmail('${lista.id}')" style="background:#4f46e5; border-color:#4f46e5; color:#fff;">
               <i class="fa-solid fa-user-plus" aria-hidden="true"></i> Compartir
@@ -2151,6 +2152,11 @@ function mostrarListasDesdeCache(resetCount = false, soloPendientes = false) {
           <ul class="productos-detalle" style="margin-top:12px; border-top:1px solid #eee; padding-top:8px;">
             ${productosHTML}
           </ul>
+          
+          <div style="margin-top: 12px; font-size: 0.8em; color: var(--muted); text-align: right; font-style: italic;">
+            Última modificación por: ${lista.ultimaModificacionPor || 'Desconocido'}
+          </div>
+          
         </div>`;
 
       ul.innerHTML += `<li data-id="${lista.id}" style="margin-bottom:10px;">${resumenHTML}${detalleHTML}</li>`;
@@ -2520,7 +2526,8 @@ if (hayError || productos.length === 0) return;
     return;
   }
   const miCorreo = currentUser ? currentUser.email : "local";
-  const datos = { lugar, fecha: fechaInput, productos, estado, pagoMensual: esPagoMensual, isEvento: esEvento };
+  // 👇 Solo le agregamos "ultimaModificacionPor" al final de esta línea 👇
+  const datos = { lugar, fecha: fechaInput, productos, estado, pagoMensual: esPagoMensual, isEvento: esEvento, ultimaModificacionPor: miCorreo };
 
   const reactivarCheckbox = document.getElementById('reactivarNotifs');
 
