@@ -4000,13 +4000,13 @@ function iniciarEscuchaAuth() {
       btnLogout.style.display = "none";
       userAvatar.style.display = "none";
       
-      // Si el usuario le dio a "Salir", borrar todos los datos locales privados
-      if (prevUser) {
-        stopListasListener();
-        listasCache.clear();
-        await saveAllToIndexedDB([]);
-        mostrarListasFirebase(true);
-      }
+      // 👇 NUEVO: Siempre borramos y ocultamos las listas si no hay usuario logueado
+      stopListasListener();
+      listasCache.clear();
+      await saveAllToIndexedDB([]); // Borra la memoria offline
+      mostrarListasFirebase(true);  // Limpia la sección "Ver Listas"
+      renderInicio();               // Limpia el Dashboard de inicio
+      actualizarNotificaciones();   // Limpia las notificaciones
     }
   });
 }
