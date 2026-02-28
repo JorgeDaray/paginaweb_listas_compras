@@ -713,3 +713,30 @@ header h1 {
 @media (max-width: 400px) {
   .texto-entrar { display: none; }
 }
+
+/* ================= MODO SUPERMERCADO EN VIVO ================= */
+ul.productos-detalle {
+  list-style: none !important;
+  padding-left: 0 !important;
+}
+.li-producto {
+  cursor: pointer;
+  padding: 8px;
+  border-radius: 8px;
+  transition: background 0.2s ease, opacity 0.2s ease;
+  display: flex;
+  align-items: flex-start;
+  margin-bottom: 2px !important;
+}
+.li-producto:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+body.dark-mode .li-producto:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+.producto-comprado {
+  opacity: 0.45;
+}
+.producto-comprado .prod-text {
+  text-decoration: line-through;
+}

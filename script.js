@@ -2062,14 +2062,15 @@ function mostrarListasDesdeCache(resetCount = false, soloPendientes = false) {
 
     pageItems.forEach(lista => {
       // Ordenar productos internos de A-Z
-      const productosOrdenados = [...(lista.productos || [])].sort((a, b) => {
+// 👇 NUEVO: Ordenar los productos alfabéticamente conservando el índice original para tacharlos
+      const productosConIndex = (lista.productos || []).map((p, i) => ({ ...p, originalIndex: i }));
+      const productosOrdenados = productosConIndex.sort((a, b) => {
         const nombreA = (a.nombre || "").toLowerCase();
         const nombreB = (b.nombre || "").toLowerCase();
         return nombreA.localeCompare(nombreB);
       });
 
       const total = productosOrdenados.reduce((sum, p) => sum + (p.precio || 0), 0).toFixed(2);
-
       const pendienteFecha = lista.estado === "pendiente";
       const pendienteProducto = productosOrdenados.some(p => p.precio === 0);
       
@@ -2129,9 +2130,22 @@ function mostrarListasDesdeCache(resetCount = false, soloPendientes = false) {
         </div>`;
 
       // HTML del Detalle (Productos ordenados)
+// 👇 HTML del Detalle (Productos ordenados y clickeables para Modo Supermercado)
       const productosHTML = productosOrdenados.map(p => {
-        const iconoP = p.precio === 0 ? `<i class="fa-solid fa-hourglass-half" title="Precio 0" style="color: #f59e0b;"></i>` : "";
-        return `<li>${escapeHtml(p.nombre)} ${iconoP} — $${(p.precio || 0).toFixed(2)}${p.descripcion ? ` <span style="color:#6b7280;font-size:0.9em">(${escapeHtml(p.descripcion)})</span>` : ""}</li>`;
+        const iconoP = p.precio === 0 ? `<i class="fa-solid fa-hourglass-half" title="Precio 0" style="color: #f59e0b; margin-left: 4px;"></i>` : "";
+        const isComprado = p.comprado ? 'producto-comprado' : '';
+        const iconCheck = p.comprado 
+          ? '<i class="fa-solid fa-circle-check" style="color:#10b981;"></i>' 
+          : '<i class="fa-regular fa-circle" style="color:#9ca3af;"></i>';
+
+        return `
+          <li class="li-producto ${isComprado}" onclick="toggleProductoComprado('${lista.id}', ${p.originalIndex}, this)">
+            <span class="check-icon" style="margin-right: 10px; font-size: 1.2em; line-height: 1;">${iconCheck}</span>
+            <span class="prod-text" style="line-height: 1.2;">
+              ${escapeHtml(p.nombre)} ${iconoP} — <strong class="precio-txt">$${(p.precio || 0).toFixed(2)}</strong>
+              ${p.descripcion ? ` <span style="color:#6b7280; font-size:0.9em;">(${escapeHtml(p.descripcion)})</span>` : ""}
+            </span>
+          </li>`;
       }).join("");
 
 // 👇 NUEVO: Extraer los correos compartidos (excluyendo el tuyo para no ser redundante)
@@ -3401,6 +3415,13 @@ window.importarJSON = async function (file, { mode = 'merge', pushToCloud = true
     const rawArr = JSON.parse(text);
     if (!Array.isArray(rawArr)) throw new Error("Formato inválido: se esperaba un arreglo.");
 
+    // 👇 NUEVO: Preguntar si desea compartir con la pareja vinculada 👇
+    const correoPareja = localStorage.getItem("correoPareja");
+    let compartirConPareja = false;
+    if (correoPareja) {
+      compartirConPareja = confirm(`Tienes una cuenta vinculada (${correoPareja}).\n\n¿Deseas compartir TODAS las listas importadas con esta persona?\n\n(Si das a 'Cancelar', se importarán como Privadas y podrás compartirlas manualmente después).`);
+    }
+
     // 1) REPLACE opcional: limpia todo lo local antes de importar
     if (mode === 'replace') {
       cancelAllScheduledNotifications({ preserveStorage: false });
@@ -3409,6 +3430,7 @@ window.importarJSON = async function (file, { mode = 'merge', pushToCloud = true
     }
 
     // 2) Normalizar
+    const miCorreo = currentUser ? currentUser.email : 'local';
     const norm = rawArr.map((it) => {
       const x = { ...(it || {}) };
       if (x.fecha && x.fecha.toDate) x.fecha = formatDateToInput(x.fecha.toDate());
@@ -3420,7 +3442,14 @@ window.importarJSON = async function (file, { mode = 'merge', pushToCloud = true
       })) : [];
       if (typeof x._notificacionDescartada !== 'boolean') x._notificacionDescartada = false;
       if (typeof x.completada !== 'boolean') x.completada = false;
-      x.accessList = [currentUser?.email || 'local'];
+      
+      // 👇 NUEVO: Asignar permisos según lo que respondió el usuario 👇
+      if (compartirConPareja && correoPareja) {
+        x.accessList = [miCorreo, correoPareja];
+      } else {
+        x.accessList = [miCorreo];
+      }
+      
       return x;
     });
 
@@ -4130,6 +4159,44 @@ function actualizarBotonVinculacion() {
     btn.innerHTML = `<i class="fas fa-user-friends" aria-hidden="true"></i> Vincular Pareja`;
   }
 }
+
+/* ======= MODO SUPERMERCADO (TACHAR PRODUCTOS) ======= */
+window.toggleProductoComprado = async function(listaId, originalIndex, liElement) {
+  if (event) event.stopPropagation(); // Evita que se cierre el acordeón de la lista al hacer clic
+  
+  const lista = listasCache.get(listaId);
+  if (!lista || !lista.productos || !lista.productos[originalIndex]) return;
+
+  // Invertir el estado
+  const nuevoEstado = !lista.productos[originalIndex].comprado;
+  lista.productos[originalIndex].comprado = nuevoEstado;
+
+  // 1. Actualizar la interfaz inmediatamente (Cero lag)
+  if (nuevoEstado) {
+    liElement.classList.add('producto-comprado');
+    liElement.querySelector('.check-icon').innerHTML = '<i class="fa-solid fa-circle-check" style="color:#10b981;"></i>';
+  } else {
+    liElement.classList.remove('producto-comprado');
+    liElement.querySelector('.check-icon').innerHTML = '<i class="fa-regular fa-circle" style="color:#9ca3af;"></i>';
+  }
+
+  // 2. Guardar silenciosamente en la caché (Sin mensajes flotantes)
+  const payload = { productos: lista.productos };
+  listasCache.set(listaId, { ...lista, ...payload });
+  schedulePersistCacheToIndexedDB().catch(()=>{});
+
+  // 3. Sincronizar en la nube o local en segundo plano
+  if (navigator.onLine && typeof updateDoc === 'function' && db) {
+    try {
+      const docRef = doc(db, "listas", listaId);
+      updateDoc(docRef, payload).catch(()=>{});
+    } catch(e) {}
+  } else {
+    const updates = loadPendingUpdates();
+    updates[listaId] = { ...(updates[listaId] || {}), ...payload };
+    savePendingUpdates(updates);
+  }
+};
 
 // Exponer globalmente
 window.vincularCuenta = vincularCuenta;
