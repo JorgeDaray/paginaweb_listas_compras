@@ -78,13 +78,20 @@
         <div style="font-size: 0.9em; opacity: 0.8;">Estimado en base a tus pagos mensuales activos</div>
       </div>
 
+      <div class="dashboard-seccion chart-container-wrapper">
+        <h3 style="margin-bottom: 12px; color: var(--text);">📊 Historial de Gastos (Últimos 6 meses)</h3>
+        <div style="position: relative; height: 200px; width: 100%; background: var(--surface); padding: 10px; border-radius: 12px; border: 1px solid var(--border); box-shadow: var(--shadow-sm);">
+          <canvas id="gastosChart"></canvas>
+        </div>
+      </div>
+
       <div class="dashboard-seccion">
-        <h3 style="margin-bottom: 12px; color: #374151;">📆 Pagos Mensuales</h3>
+        <h3 style="margin-bottom: 12px; color: var(--text);">📆 Pagos Mensuales</h3>
         <ul id="listaInicioMensuales" style="list-style: none; padding: 0;"></ul>
       </div>
 
       <div class="dashboard-seccion">
-        <h3 style="margin-bottom: 12px; color: #374151;">🔜 Próximas Compras y Eventos</h3>
+        <h3 style="margin-bottom: 12px; color: var(--text);">🔜 Próximas Compras y Eventos</h3>
         <ul id="listaInicioProximos" style="list-style: none; padding: 0;"></ul>
       </div>
     </section>
@@ -324,6 +331,7 @@
   <link id="flatpickr-theme-css" rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
   <script defer src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/es.js"></script>  
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
   <script type="module" src="./script.js"></script>
 </body>

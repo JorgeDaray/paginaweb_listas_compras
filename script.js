@@ -3941,6 +3941,11 @@ function renderInicio() {
   containerProximos.innerHTML = proximosLimitados.length
     ? proximosLimitados.map(generarHTMLItem).join('')
     : '<li style="color:#6b7280; font-size:0.9em; padding: 10px;">No hay listas o eventos próximos.</li>';
+    // 👇 AGREGA ESTO AQUÍ 👇
+  if (typeof renderGraficaGastos === 'function') {
+    // Le damos un mini respiro de 50ms para que el HTML cargue antes de dibujar el canvas
+    setTimeout(renderGraficaGastos, 50); 
+  }
 }
 
 /* ======= MODO OSCURO (THEME TOGGLE) ACTUALIZADO ======= */
@@ -3979,6 +3984,8 @@ function toggleTheme() {
     if(btnIcon) { btnIcon.classList.remove('fa-sun'); btnIcon.classList.add('fa-moon'); }
   }
   updateFlatpickrTheme(isDark); // <--- Cambia calendario al presionar el botón
+  // 👇 AGREGA ESTA LÍNEA PARA QUE LA GRÁFICA SE ADAPTE AL MODO OSCURO 👇
+  if (typeof renderGraficaGastos === 'function') renderGraficaGastos();
 }
 // Ejecutar al cargar la página para aplicar el color de inmediato
 initTheme();
@@ -4198,6 +4205,91 @@ window.toggleProductoComprado = async function(listaId, originalIndex, liElement
   }
 };
 
+/* ======= DASHBOARD FINANCIERO (CHART.JS) ======= */
+let gastosChartInstance = null;
+
+window.renderGraficaGastos = function() {
+  const ctx = document.getElementById('gastosChart');
+  if (!ctx || typeof Chart === 'undefined') return;
+
+  // 1. Preparar los últimos 6 meses
+  const mesesNombres = [];
+  const totales = [0, 0, 0, 0, 0, 0];
+  const hoy = new Date();
+
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(hoy.getFullYear(), hoy.getMonth() - i, 1);
+    // Ej: "FEB", "MAR"
+    mesesNombres.push(d.toLocaleString('es-ES', { month: 'short' }).toUpperCase());
+  }
+
+  // 2. Sumar los gastos de la caché
+  Array.from(listasCache.values()).forEach(lista => {
+    if (!lista.fecha || lista._notificacionDescartada) return; // Ignorar descartadas
+    
+    const f = parseFechaFromString(lista.fecha);
+    if (!f) return;
+
+    const diffMonths = (hoy.getFullYear() - f.getFullYear()) * 12 + (hoy.getMonth() - f.getMonth());
+
+    // Si el gasto ocurrió en los últimos 6 meses (0 = este mes, 5 = hace 5 meses)
+    if (diffMonths >= 0 && diffMonths <= 5) {
+      const totalLista = (lista.productos || []).reduce((sum, p) => sum + (Number(p.precio) || 0), 0);
+      const index = 5 - diffMonths;
+      totales[index] += totalLista;
+    }
+  });
+
+  // 3. Estilos adaptables (Modo Claro / Oscuro)
+  const isDark = document.body.classList.contains('dark-mode');
+  const textColor = isDark ? '#9ca3af' : '#6b7280';
+  const gridColor = isDark ? '#374151' : '#e5e7eb';
+
+  // 4. Destruir gráfica anterior si existe (para evitar superposición al actualizar)
+  if (gastosChartInstance) {
+    gastosChartInstance.destroy();
+  }
+
+  // 5. Dibujar la nueva gráfica
+  gastosChartInstance = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: mesesNombres,
+      datasets: [{
+        label: 'Gastos del Mes ($)',
+        data: totales,
+        backgroundColor: '#3b82f6', // Azul bonito
+        borderRadius: 4,            // Bordes redondeados
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: function(context) {
+              return ' $' + context.raw.toFixed(2);
+            }
+          }
+        }
+      },
+      scales: {
+        y: { 
+          beginAtZero: true,
+          ticks: { color: textColor },
+          grid: { color: gridColor }
+        },
+        x: {
+          ticks: { color: textColor },
+          grid: { display: false }
+        }
+      }
+    }
+  });
+};
+
 // Exponer globalmente
 window.vincularCuenta = vincularCuenta;
 window.actualizarBotonVinculacion = actualizarBotonVinculacion;
@@ -4220,5 +4312,7 @@ window.actualizarNotificaciones = actualizarNotificaciones;
 window.mostrarListasFirebase = mostrarListasFirebase;
 window.irAListaPorId = function(id){ mostrarSeccion("verListas"); setTimeout(()=>{ const elemento = document.querySelector(`#todasLasListas li[data-id="${id}"]`); if (elemento) elemento.scrollIntoView({behavior:"smooth", block:"center"}); },200); };
 window.toggleProductosExtra = toggleProductosExtra;
+
+
 
 /* FIN del archivo */
