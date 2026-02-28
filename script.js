@@ -2134,6 +2134,14 @@ function mostrarListasDesdeCache(resetCount = false, soloPendientes = false) {
         return `<li>${escapeHtml(p.nombre)} ${iconoP} — $${(p.precio || 0).toFixed(2)}${p.descripcion ? ` <span style="color:#6b7280;font-size:0.9em">(${escapeHtml(p.descripcion)})</span>` : ""}</li>`;
       }).join("");
 
+// 👇 NUEVO: Extraer los correos compartidos (excluyendo el tuyo para no ser redundante)
+      const misCorreos = currentUser ? currentUser.email : "";
+      const invitados = (lista.accessList || []).filter(email => email !== misCorreos).join(', ');
+      
+      const textoCompartido = invitados 
+        ? `👥 Compartida con: <strong>${escapeHtml(invitados)}</strong>` 
+        : `🔒 Lista privada`;
+
       const detalleHTML = `
         <div class="detalle-lista oculto">
           <div class="acciones-lista"> 
@@ -2153,8 +2161,9 @@ function mostrarListasDesdeCache(resetCount = false, soloPendientes = false) {
             ${productosHTML}
           </ul>
           
-          <div style="margin-top: 12px; font-size: 0.8em; color: var(--muted); text-align: right; font-style: italic;">
-            Última modificación por: ${lista.ultimaModificacionPor || 'Desconocido'}
+          <div style="margin-top: 12px; padding-top: 8px; border-top: 1px dashed var(--border); display: flex; justify-content: space-between; font-size: 0.85em; color: var(--muted);">
+            <div>${textoCompartido}</div>
+            <div style="font-style: italic;">Último cambio por: ${lista.ultimaModificacionPor ? lista.ultimaModificacionPor.split('@')[0] : 'Desconocido'}</div>
           </div>
           
         </div>`;
@@ -3099,6 +3108,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     // inicializar filtro notifs
     setupNotifsFilterUI();
     applyNotifsFilterAndRender();
+    // 👇 AGREGA ESTA LÍNEA AQUÍ 👇
+    if (typeof actualizarBotonVinculacion === 'function') actualizarBotonVinculacion();
 
     document.addEventListener('click', (e) => {
       if (e.target.closest('.sugerencias') || e.target.closest('.sugerencia-item') || e.target.closest('.producto-nombre')) {
@@ -4090,7 +4101,7 @@ async function compartirListaConEmail(id) {
 /* ======= VINCULAR CUENTA AUTOMÁTICA ======= */
 function vincularCuenta() {
   const actual = localStorage.getItem("correoPareja") || "";
-  const email = prompt("Ingresa el correo de tu pareja. Todas tus listas nuevas se compartirán automáticamente con esta persona:", actual);
+  const email = prompt("Ingresa el correo de tu pareja. Todas tus listas nuevas se compartirán automáticamente con esta persona:\n\n(Para desvincular, deja esto en blanco y dale a Aceptar)", actual);
   
   if (email === null) return; // Si le da a cancelar, no hace nada
   
@@ -4103,10 +4114,26 @@ function vincularCuenta() {
   } else {
     mostrarMensaje("Correo no válido", "error");
   }
+  actualizarBotonVinculacion(); // Actualiza el texto del menú
+}
+
+// NUEVA FUNCIÓN: Cambia el texto del menú según el estado
+function actualizarBotonVinculacion() {
+  const btn = document.getElementById("btnVincular");
+  if (!btn) return;
+  const pareja = localStorage.getItem("correoPareja");
+  if (pareja) {
+    // Si hay pareja, mostramos su nombre (lo que está antes del @)
+    const nombre = pareja.split('@')[0];
+    btn.innerHTML = `<i class="fas fa-user-check" aria-hidden="true" style="color: var(--accent);"></i> Emparejado: ${nombre}`;
+  } else {
+    btn.innerHTML = `<i class="fas fa-user-friends" aria-hidden="true"></i> Vincular Pareja`;
+  }
 }
 
 // Exponer globalmente
 window.vincularCuenta = vincularCuenta;
+window.actualizarBotonVinculacion = actualizarBotonVinculacion;
 window.compartirListaConEmail = compartirListaConEmail;
 window.actualizarSugerenciasLugares = actualizarSugerenciasLugares;
 window.loginConGoogle = loginConGoogle;
