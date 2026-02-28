@@ -598,67 +598,72 @@ body.dark-mode .toggle-btn input[type="checkbox"]:checked + .toggle-label {
   color: #bfdbfe;
 }
 
-/* ================= MODO OSCURO (NIGHT MODE) ================= */
+/* ================= MODO OSCURO AMOLED (PANTALLAS OLED) ================= */
 body.dark-mode {
-  --bg: #111827;          /* Fondo muy oscuro */
-  --surface: #1f2937;     /* Superficie de tarjetas */
-  --text: #f3f4f6;        /* Texto claro */
-  --muted: #9ca3af;       /* Texto gris claro */
-  --border: #374151;      /* Bordes oscuros */
-  --border-2: #4b5563;
-  --accent: #60a5fa;      /* Azul claro */
+  --bg: #000000;          /* Negro puro para apagar píxeles */
+  --surface: #0a0a0a;     /* Superficie casi negra para mínimo contraste */
+  --text: #f4f4f5;        /* Texto blanco nítido */
+  --muted: #a1a1aa;       /* Texto gris secundario */
+  --border: #27272a;      /* Bordes sutiles */
+  --border-2: #3f3f46;
+  --accent: #60a5fa;      
   --accent-600: #3b82f6;
-  --shadow-sm: 0 1px 2px rgba(0,0,0,0.5);
-  --shadow-md: 0 4px 12px rgba(0,0,0,0.5);
+  --shadow-sm: 0 1px 2px rgba(255,255,255,0.03);
+  --shadow-md: 0 4px 12px rgba(255,255,255,0.05);
 }
 
 body.dark-mode h1, body.dark-mode h2, body.dark-mode h3 { color: var(--text); }
-body.dark-mode input, body.dark-mode select { background: #374151; color: var(--text); }
-body.dark-mode input::placeholder { color: #9ca3af; }
+body.dark-mode input, body.dark-mode select { background: #18181b; color: var(--text); border-color: var(--border); }
+body.dark-mode input::placeholder { color: #71717a; }
 
 /* Botones y navegacion en modo oscuro */
-body.dark-mode nav button, body.dark-mode .btn { background: #374151; color: var(--text); border-color: var(--border); }
-body.dark-mode nav button:hover, body.dark-mode .btn:hover { background: #4b5563; }
-body.dark-mode .eliminar-producto { background: #7f1d1d; color: #fca5a5; border-color: #991b1b; }
+body.dark-mode nav button, body.dark-mode .btn { background: #18181b; color: var(--text); border-color: var(--border); }
+body.dark-mode nav button:hover, body.dark-mode .btn:hover { background: #27272a; }
+body.dark-mode .eliminar-producto { background: #450a0a; color: #fca5a5; border-color: #7f1d1d; }
 
 /* Paneles y tarjetas */
-body.dark-mode .detalle-lista, body.dark-mode .productos { background: #111827; }
-body.dark-mode .badge-pendiente { background: #78350f; color: #fcd34d; border-color: #b45309; }
-body.dark-mode .segmented { background: #374151; }
+body.dark-mode .detalle-lista, body.dark-mode .productos { background: #000000; border: 1px solid var(--border); }
+body.dark-mode .badge-pendiente { background: #451a03; color: #fcd34d; border-color: #78350f; }
+body.dark-mode .segmented { background: #18181b; border-color: var(--border); }
 body.dark-mode .segmented .seg-btn { color: var(--text); }
 body.dark-mode .segmented .seg-btn.active { background: #1e3a8a; color: #bfdbfe; }
-body.dark-mode .sugerencias { background: #1f2937; }
-body.dark-mode .sugerencia-item:hover { background: #374151; }
+body.dark-mode .sugerencias { background: #0a0a0a; border-color: var(--border); }
+body.dark-mode .sugerencia-item:hover { background: #18181b; }
 
 /* Alertas */
 body.dark-mode .msg-info { background:#1e3a8a; color:#bfdbfe; border-color:#2563eb; }
-body.dark-mode .msg-success { background:#064e3b; color:#a7f3d0; border-color:#059669; }
-body.dark-mode .msg-error { background:#7f1d1d; color:#fecaca; border-color:#dc2626; }
+body.dark-mode .msg-success { background:#022c22; color:#a7f3d0; border-color:#059669; }
+body.dark-mode .msg-error { background:#450a0a; color:#fecaca; border-color:#dc2626; }
 
-/* TRUCO MAGICO: Invertir los colores que creaste directamente en el Javascript (inline-styles) */
+/* TRUCO MAGICO: Invertir los colores que creaste directamente en el Javascript */
 body.dark-mode [style*="color:#111"], 
 body.dark-mode [style*="color: #111"],
 body.dark-mode [style*="color:#374151"],
-body.dark-mode [style*="color:#2b2b38"] { color: #f3f4f6 !important; }
+body.dark-mode [style*="color:#2b2b38"] { color: #f4f4f5 !important; }
 
-body.dark-mode [style*="color:#059669"] { color: #34d399 !important; } /* Verde claro para precios */
-body.dark-mode [style*="color:#6b7280"], body.dark-mode [style*="color:#333"] { color: #9ca3af !important; }
+body.dark-mode [style*="color:#059669"] { color: #34d399 !important; } 
+body.dark-mode [style*="color:#6b7280"], body.dark-mode [style*="color:#333"] { color: #a1a1aa !important; }
 
 body.dark-mode [style*="background:#fff"], body.dark-mode [style*="background:#ffffff"] { background-color: var(--surface) !important; }
-body.dark-mode [style*="background:#f8fafc"] { background-color: #374151 !important; }
+body.dark-mode [style*="background:#f8fafc"] { background-color: #18181b !important; }
 
 /* Botones específicos */
 body.dark-mode .btn--primary { background: #1e3a8a !important; color: #bfdbfe !important; border-color: #1e3a8a !important; }
-body.dark-mode .btn--secondary { background: #374151 !important; color: #f1f5f9 !important; border-color: #4b5563 !important; }
-body.dark-mode .btn--danger { background: #7f1d1d !important; color: #fecaca !important; border-color: #7f1d1d !important; }
-body.dark-mode .btn--success { background: #064e3b !important; color: #a7f3d0 !important; border-color: #064e3b !important; }
+body.dark-mode .btn--secondary { background: #18181b !important; color: #f1f5f9 !important; border-color: #3f3f46 !important; }
+body.dark-mode .btn--danger { background: #450a0a !important; color: #fecaca !important; border-color: #7f1d1d !important; }
+body.dark-mode .btn--success { background: #022c22 !important; color: #a7f3d0 !important; border-color: #064e3b !important; }
 
 /* Tarjeta del Dashboard y Eventos */
-body.dark-mode .tarjeta-resumen { background: linear-gradient(135deg, #1e3a8a, #172554); }
-body.dark-mode .event-lila-verde .date-box { background: #064e3b; color: #6ee7b7; }
-body.dark-mode .event-lila-ambar .date-box { background: #78350f; color: #fcd34d; }
-body.dark-mode .event-lila-rojo .date-box { background: #7f1d1d; color: #fca5a5; }
-body.dark-mode .event-caducado .date-box { background: #374151; color: #9ca3af; }
+body.dark-mode .tarjeta-resumen { background: linear-gradient(135deg, #1e3a8a, #020617); }
+body.dark-mode .event-lila-verde .date-box { background: #022c22; color: #6ee7b7; }
+body.dark-mode .event-lila-ambar .date-box { background: #451a03; color: #fcd34d; }
+body.dark-mode .event-lila-rojo .date-box { background: #450a0a; color: #fca5a5; }
+body.dark-mode .event-caducado .date-box { background: #18181b; color: #a1a1aa; }
+
+/* Toggles en Modo Oscuro */
+body.dark-mode .toggle-label { background: #18181b; border-color: #27272a; color: #a1a1aa; }
+body.dark-mode .toggle-btn:hover .toggle-label { background: #27272a; }
+body.dark-mode .toggle-btn input[type="checkbox"]:checked + .toggle-label { border-color: #3b82f6; background: #1e3a8a; color: #bfdbfe; }
 
 /* ================= MEJORA DEL ENCABEZADO (HEADER) ================= */
 .header-top-bar {
